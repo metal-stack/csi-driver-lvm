@@ -202,9 +202,9 @@ done
 # about the deployment here, otherwise we wouldn't know what to wait
 # for: the expectation is that we run attacher, provisioner,
 # snapshotter, resizer, socat and lvm plugin in the default namespace.
-expected_running_pods=6
+expected_running_pods=5
 cnt=0
-while [ $(kubectl get pods 2>/dev/null | grep '^csi-lvm.* Running ' | wc -l) -lt $expected_running_pods ] || ! kubectl describe volumesnapshotclasses.snapshot.storage.k8s.io 2>/dev/null >/dev/null; do
+while [ $(kubectl get pods 2>/dev/null | grep '^csi-lvm.* Running ' | wc -l) -lt $expected_running_pods ] ; do
     if [ $cnt -gt 4 ]; then
         echo "$(kubectl get pods 2>/dev/null | grep '^csi-lvm.* Running ' | wc -l) running pods:"
         kubectl describe pods

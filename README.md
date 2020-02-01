@@ -56,6 +56,6 @@ kubectl apply -f examples/csi-app.yaml
 kubectl delete -f examples/csi-pod-raw.yaml
 kubectl delete -f examples/csi-pvc-raw.yaml
 
-kubectl delete -f examples/csi-pvc.yaml
 kubectl delete -f  examples/csi-app.yaml
+kubectl delete -f examples/csi-pvc.yaml
 '''
