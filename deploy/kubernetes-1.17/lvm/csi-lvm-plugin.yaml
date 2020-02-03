@@ -76,9 +76,8 @@ spec:
               apiVersion: v1
               fieldPath: spec.nodeName
         - name: CSI_DEVICESPATTERN
-          value: "/dev/nvme[0-9]n[0-9]"
-#          value: /dev/loop[0-1]
-
+          value: /dev/loop[0-1]
+#          value: "/dev/nvme[0-9]n[0-9]"
         - name: CSI_VGNAME
           value: csi-lvm
         image: mwennrich/lvmplugin:latest
