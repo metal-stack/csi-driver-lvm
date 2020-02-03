@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/docker/go-units"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 
@@ -74,13 +75,27 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	// TODO
 	// lvmType is currently hard-coded to linear
 	// https://github.com/kubernetes-csi/external-provisioner/pull/399
-	lvmType := "linear"
+
+	lvmType := req.GetVolumeContext()["type"]
+	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
+		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %2", lvmType)
+	}
 
 	// if ephemeral is specified, create volume here to avoid errors
 	if ephemeralVolume {
 		volID := req.GetVolumeId()
-		volName := fmt.Sprintf("ephemeral-%s", volID)
-		err := createLvmVolume(req.GetVolumeId(), volName, maxStorageCapacity, mountAccess, ephemeralVolume, ns.devicesPattern, lvmType, ns.vgName)
+
+		val := req.GetVolumeContext()["size"]
+		glog.V(4).Infof("size: created volume: %s", val)
+		if val == "" {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("ephemeral inline volume is missing size parameter"))
+		}
+		size, err := units.RAMInBytes(val)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("failed to parse size(%s) of ephemeral inline volume: %s", val, err.Error()))
+		}
+
+		err = createLvmVolume(req.GetVolumeId(), size, mountAccess, ephemeralVolume, ns.devicesPattern, lvmType, ns.vgName)
 		if err != nil && !os.IsExist(err) {
 			glog.Error("ephemeral mode failed to create volume: ", err)
 			return nil, status.Error(codes.Internal, err.Error())

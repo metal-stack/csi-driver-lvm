@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: csi-pvc
+  name: csi-pvc-mirror
 spec:
   accessModes:
   - ReadWriteOnce
   resources:
     requests:
       storage: 100Mi
-  storageClassName: csi-lvm-sc-linear # defined in csi-setup.yaml
+  storageClassName: csi-lvm-sc-mirror # defined in csi-setup.yaml

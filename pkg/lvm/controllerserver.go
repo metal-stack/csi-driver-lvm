@@ -115,14 +115,16 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
 	}
 
-	volumeID := req.GetName()
-
 	// TODO
 	// lvmType is currently hard-coded to linear
 	// https://github.com/kubernetes-csi/external-provisioner/pull/399
-	lvmType := "linear"
+	lvmType := req.GetParameters()["type"]
+	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
+		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %2", lvmType)
+	}
 
-	err := createLvmVolume(volumeID, req.GetName(), capacity, requestedAccessType, false /* ephemeral */, cs.devicesPattern, lvmType, cs.vgName)
+	volumeID := req.GetName()
+	err := createLvmVolume(volumeID, capacity, requestedAccessType, false /* ephemeral */, cs.devicesPattern, lvmType, cs.vgName)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", volumeID, err)
 	}

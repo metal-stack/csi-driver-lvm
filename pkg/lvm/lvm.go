@@ -131,16 +131,16 @@ func lvmIsEmpty(p string) (bool, error) {
 	return false, err
 }
 
-func createLvmVolume(volID, lvName string, lvSize int64, volAccessType accessType, ephemeral bool, devicesPattern string, lvmType string, vgName string) error {
+func createLvmVolume(volID string, lvSize int64, volAccessType accessType, ephemeral bool, devicesPattern string, lvmType string, vgName string) error {
 
-	klog.Infof("create lv %s size:%d vg:%s devicespattern:%s dir:%s type:%s ", lvName, lvSize, vgName, devicesPattern, volID, lvmType)
+	klog.Infof("create lv %s size:%d vg:%s devicespattern:%s dir:%s type:%s ", volID, lvSize, vgName, devicesPattern, volID, lvmType)
 
 	output, err := createVG(vgName, devicesPattern)
 	if err != nil {
 		return fmt.Errorf("unable to create vg: %v output:%s", err, output)
 	}
 
-	output, err = createLVS(context.Background(), vgName, lvName, lvSize, lvmType)
+	output, err = createLVS(context.Background(), vgName, volID, lvSize, lvmType)
 	if err != nil {
 		return fmt.Errorf("unable to create lv: %v output:%s", err, output)
 	}

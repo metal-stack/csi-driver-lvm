@@ -10,4 +10,4 @@ minikube ssh 'sudo rm /sbin/losetup'
 scp -o 'StrictHostKeyChecking=no' -i $(minikube ssh-key) /usr/sbin/losetup  docker@$(minikube ip):/tmp/losetup
 minikube ssh 'sudo mv /tmp/losetup /sbin/losetup'
 ./deploy/kubernetes-1.17/deploy-lvm.sh
-kubectl apply -f examples/csi-storageclass.yaml
+kubectl apply -f examples/csi-storageclass-linear.yaml

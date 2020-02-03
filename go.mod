@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	github.com/container-storage-interface/spec v1.1.0
+	github.com/docker/go-units v0.4.0
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
 	github.com/golang/lint v0.0.0-20180702182130-06c8688daad7 // indirect
 	github.com/golang/protobuf v1.3.2

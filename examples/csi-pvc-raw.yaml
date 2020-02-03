@@ -5,7 +5,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: csi-lvm-sc
+  storageClassName: csi-lvm-sc-linear
   volumeMode: Block
   resources:
     requests:
