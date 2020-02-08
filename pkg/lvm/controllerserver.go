@@ -17,6 +17,8 @@ limitations under the License.
 package lvm
 
 import (
+	"strconv"
+
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -79,68 +81,20 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		return nil, status.Error(codes.InvalidArgument, "Volume Capabilities missing in request")
 	}
 
-	// Keep a record of the requested access types.
-	var accessTypeMount, accessTypeBlock bool
+	glog.V(4).Infof("fake successful creation of volume %s at path %s", req.GetName())
+	volumeContext := req.GetParameters()
+	//size, err:=strconv.ParseInt(req.GetCapacityRange().GetRequiredBytes(), 10, 64)
+	size := strconv.FormatInt(req.GetCapacityRange().GetRequiredBytes(), 10)
 
-	for _, cap := range caps {
-		if cap.GetBlock() != nil {
-			accessTypeBlock = true
-		}
-		if cap.GetMount() != nil {
-			accessTypeMount = true
-		}
-	}
-	// A real driver would also need to check that the other
-	// fields in VolumeCapabilities are sane. The check above is
-	// just enough to pass the "[Testpattern: Dynamic PV (block
-	// volmode)] volumeMode should fail in binding dynamic
-	// provisioned PV to PVC" storage E2E test.
+	volumeContext["RequiredBytes"] = size
 
-	if accessTypeBlock && accessTypeMount {
-		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
-	}
-
-	var requestedAccessType accessType
-
-	if accessTypeBlock {
-		requestedAccessType = blockAccess
-	} else {
-		// Default to mount.
-		requestedAccessType = mountAccess
-	}
-
-	// Check for maximum available capacity
-	capacity := int64(req.GetCapacityRange().GetRequiredBytes())
-	if capacity >= maxStorageCapacity {
-		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
-	}
-
-	// TODO
-	// lvmType is currently hard-coded to linear
-	// https://github.com/kubernetes-csi/external-provisioner/pull/399
-	lvmType := req.GetParameters()["type"]
-	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
-		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %2", lvmType)
-	}
-
-	volumeID := req.GetName()
-	err := createLvmVolume(volumeID, capacity, requestedAccessType, false /* ephemeral */, cs.devicesPattern, lvmType, cs.vgName)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", volumeID, err)
-	}
-	glog.V(4).Infof("created volume %s at path %s", volumeID)
-
-	topologies := []*csi.Topology{&csi.Topology{
-		Segments: map[string]string{TopologyKeyNode: cs.nodeID},
-	}}
-
+	// we can't create a volume since we don't yet know on which node the volume is needed, so we fake a successful creation
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:           volumeID,
-			CapacityBytes:      req.GetCapacityRange().GetRequiredBytes(),
-			VolumeContext:      req.GetParameters(),
-			ContentSource:      req.GetVolumeContentSource(),
-			AccessibleTopology: topologies,
+			VolumeId:      req.GetName(),
+			CapacityBytes: req.GetCapacityRange().GetRequiredBytes(),
+			VolumeContext: volumeContext,
+			ContentSource: req.GetVolumeContentSource(),
 		},
 	}, nil
 }

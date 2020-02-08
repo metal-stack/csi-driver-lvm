@@ -19,6 +19,7 @@ package lvm
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/docker/go-units"
 	"github.com/golang/glog"
@@ -72,13 +73,58 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
 	}
 
-	// TODO
-	// lvmType is currently hard-coded to linear
-	// https://github.com/kubernetes-csi/external-provisioner/pull/399
+	// Keep a record of the requested access types.
+	var accessTypeMount, accessTypeBlock bool
 
 	lvmType := req.GetVolumeContext()["type"]
 	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %2", lvmType)
+	}
+
+	cap := req.GetVolumeCapability()
+
+	if cap.GetBlock() != nil {
+		accessTypeBlock = true
+	}
+	if cap.GetMount() != nil {
+		accessTypeMount = true
+	}
+	// A real driver would also need to check that the other
+	// fields in VolumeCapabilities are sane. The check above is
+	// just enough to pass the "[Testpattern: Dynamic PV (block
+	// volmode)] volumeMode should fail in binding dynamic
+	// provisioned PV to PVC" storage E2E test.
+
+	if accessTypeBlock && accessTypeMount {
+		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
+	}
+
+	var requestedAccessType accessType
+
+	if accessTypeBlock {
+		requestedAccessType = blockAccess
+	} else {
+		// Default to mount.
+		requestedAccessType = mountAccess
+	}
+
+	// Check for maximum available capacity
+	volumeID := req.GetVolumeId()
+
+	capacityBytes, err := strconv.Atoi(req.GetVolumeContext()["RequiredBytes"])
+
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", volumeID, err)
+	}
+	capacity := int64(capacityBytes)
+
+	if capacity >= maxStorageCapacity {
+		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
+	}
+
+	err = createLvmVolume(volumeID, capacity, requestedAccessType, false /* ephemeral */, ns.devicesPattern, lvmType, ns.vgName)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", volumeID, err)
 	}
 
 	// if ephemeral is specified, create volume here to avoid errors
