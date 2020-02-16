@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/google/lvmd/commands"
+	lvm "github.com/mwennrich/csi-driver-lvm/pkg/lvm"
 	"github.com/urfave/cli/v2"
 	"k8s.io/klog"
 )
@@ -203,46 +204,16 @@ func bindMountLV(lvname, vgname, directory string) (string, error) {
 	return "", nil
 }
 
-func vgExists(name string) bool {
-	vgs, err := commands.ListVG(context.Background())
-	if err != nil {
-		klog.Infof("unable to list existing volumegroups:%v", err)
-	}
-	vgexists := false
-	for _, vg := range vgs {
-		klog.Infof("compare vg:%s with:%s\n", vg.Name, name)
-		if vg.Name == name {
-			vgexists = true
-			break
-		}
-	}
-	return vgexists
-}
-
-func vgactivate(name string) {
-	// scan for vgs and activate if any
-	cmd := exec.Command("vgscan")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		klog.Infof("unable to scan for volumegroups:%s %v", out, err)
-	}
-	cmd = exec.Command("vgchange", "-ay")
-	_, err = cmd.CombinedOutput()
-	if err != nil {
-		klog.Infof("unable to activate volumegroups:%s %v", out, err)
-	}
-}
-
 //move this to nodeserver creation?
 func createVG(name string, devicesPattern []string) (string, error) {
-	vgexists := vgExists(name)
+	vgexists := lvm.VgExists(name)
 	if vgexists {
 		klog.Infof("volumegroup: %s already exists\n", name)
 		return name, nil
 	}
-	vgactivate(name)
+	lvm.Vgactivate(name)
 	// now check again for existing vg again
-	vgexists = vgExists(name)
+	vgexists = lvm.VgExists(name)
 	if vgexists {
 		klog.Infof("volumegroup: %s already exists\n", name)
 		return name, nil

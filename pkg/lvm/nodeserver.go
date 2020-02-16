@@ -44,12 +44,12 @@ type nodeServer struct {
 func NewNodeServer(nodeId string, ephemeral bool, maxVolumesPerNode int64, devicesPattern string, vgName string) *nodeServer {
 
 	// revive existing volumes
-	vgexists := vgExists(vgName)
+	vgexists := VgExists(vgName)
 	if !vgexists {
 		klog.Infof("volumegroup: %s not found\n", vgName)
-		vgactivate(vgName)
+		Vgactivate(vgName)
 		// now check again for existing vg again
-		vgexists = vgExists(vgName)
+		vgexists = VgExists(vgName)
 		if !vgexists {
 			klog.Infof("volumegroup: %s not found\n", vgName)
 			return nil

@@ -361,7 +361,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 	return nil
 }
 
-func vgExists(name string) bool {
+func VgExists(name string) bool {
 	vgs, err := commands.ListVG(context.Background())
 	if err != nil {
 		klog.Infof("unable to list existing volumegroups:%v", err)
@@ -377,7 +377,7 @@ func vgExists(name string) bool {
 	return vgexists
 }
 
-func vgactivate(name string) {
+func Vgactivate(name string) {
 	// scan for vgs and activate if any
 	cmd := exec.Command("vgscan")
 	out, err := cmd.CombinedOutput()
