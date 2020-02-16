@@ -38,6 +38,9 @@ var (
 	showVersion       = flag.Bool("version", false, "Show version.")
 	devicesPattern    = flag.String("devices", "", "device pattern")
 	vgName            = flag.String("vgname", "csi-lvm", "name of volume group")
+	namespace         = flag.String("namespace", "csi-lvm", "name of namespace")
+	provisionerImage  = flag.String("provisionerimage", "metalstack/csi-lvmplugin-provisioner", "name of provisioner image")
+	pullPolicy        = flag.String("pullpolicy", "ifnotpresent", "pull policy for provisioner image")
 
 	// Set by the build process
 	version = ""
@@ -61,7 +64,7 @@ func main() {
 }
 
 func handle() {
-	driver, err := lvm.NewLvmDriver(*driverName, *nodeID, *endpoint, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName)
+	driver, err := lvm.NewLvmDriver(*driverName, *nodeID, *endpoint, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName, *namespace, *provisionerImage, *pullPolicy)
 	if err != nil {
 		fmt.Printf("Failed to initialize driver: %s", err.Error())
 		os.Exit(1)

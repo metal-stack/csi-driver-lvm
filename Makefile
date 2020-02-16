@@ -16,3 +16,19 @@ CMDS=lvmplugin
 all: build
 
 include release-tools/build.make
+
+.PHONY: provisioner
+provisioner:
+	go build -tags netgo -o bin/csi-lvmplugin-provisioner cmd/provisioner/*.go
+	strip bin/csi-lvmplugin-provisioner
+
+.PHONY: dockerimages
+dockerimages:
+	docker build -t mwennrich/lvmplugin:latest . 
+	docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile
+
+.PHONY: dockerpush
+dockerpush:
+	docker push mwennrich/lvmplugin:latest 
+	docker push mwennrich/csi-lvmplugin-provisioner:latest 
+

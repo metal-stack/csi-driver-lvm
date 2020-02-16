@@ -19,16 +19,20 @@ package lvm
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
-
 	"github.com/google/lvmd/commands"
+
+	v1 "k8s.io/api/core/v1"
+	k8serror "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+
 	"k8s.io/klog"
 )
 
@@ -50,6 +54,9 @@ type lvm struct {
 	maxVolumesPerNode int64
 	devicesPattern    string
 	vgName            string
+	provisionerImage  string
+	pullPolicy        v1.PullPolicy
+	namespace         string
 
 	ids *identityServer
 	ns  *nodeServer
@@ -60,7 +67,35 @@ var (
 	vendorVersion = "dev"
 )
 
-func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string) (*lvm, error) {
+type actionType string
+
+type volumeAction struct {
+	action           actionType
+	name             string
+	nodeName         string
+	size             int64
+	lvmType          string
+	isBlock          bool
+	devicesPattern   string
+	provisionerImage string
+	pullPolicy       v1.PullPolicy
+	kubeClient       kubernetes.Clientset
+	namespace        string
+}
+
+const (
+	keyNode          = "kubernetes.io/hostname"
+	typeAnnotation   = "csi-lvm.metal-stack.io/type"
+	linearType       = "linear"
+	stripedType      = "striped"
+	mirrorType       = "mirror"
+	actionTypeCreate = "create"
+	actionTypeDelete = "delete"
+	pullAlways       = "always"
+	pullIfNotPresent = "ifnotpresent"
+)
+
+func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*lvm, error) {
 	if driverName == "" {
 		return nil, fmt.Errorf("No driver name provided")
 	}
@@ -76,6 +111,11 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 		vendorVersion = version
 	}
 
+	pp := v1.PullAlways
+	if strings.ToLower(pullPolicy) == pullIfNotPresent {
+		pp = v1.PullIfNotPresent
+	}
+
 	glog.Infof("Driver: %v ", driverName)
 	glog.Infof("Version: %s", vendorVersion)
 
@@ -88,6 +128,9 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 		maxVolumesPerNode: maxVolumesPerNode,
 		devicesPattern:    devicesPattern,
 		vgName:            vgName,
+		namespace:         namespace,
+		provisionerImage:  provisionerImage,
+		pullPolicy:        pp,
 	}, nil
 }
 
@@ -95,66 +138,11 @@ func (lvm *lvm) Run() {
 	// Create GRPC servers
 	lvm.ids = NewIdentityServer(lvm.name, lvm.version)
 	lvm.ns = NewNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
-	lvm.cs = NewControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName)
+	lvm.cs = NewControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
 
 	s := NewNonBlockingGRPCServer()
 	s.Start(lvm.endpoint, lvm.ids, lvm.cs, lvm.ns)
 	s.Wait()
-}
-
-// deleteVolume deletes the directory for the lvm volume.
-func deleteLvmVolume(lvName string, vgName string) error {
-	glog.V(4).Infof("deleting lvm volume: %s", lvName)
-
-	output, err := commands.RemoveLV(context.Background(), vgName, lvName)
-	if err != nil {
-		return fmt.Errorf("unable to delete lv: %v output:%s", err, output)
-	}
-	klog.Infof("lv %s vg:%s deleted", lvName, vgName)
-
-	return nil
-}
-
-// lvmIsEmpty is a simple check to determine if the specified lvm directory
-// is empty or not.
-func lvmIsEmpty(p string) (bool, error) {
-	f, err := os.Open(p)
-	if err != nil {
-		return true, fmt.Errorf("unable to open lvm volume, error: %v", err)
-	}
-	defer f.Close()
-
-	_, err = f.Readdir(1)
-	if err == io.EOF {
-		return true, nil
-	}
-	return false, err
-}
-
-func createLvmVolume(volID string, lvSize int64, volAccessType accessType, ephemeral bool, devicesPattern string, lvmType string, vgName string) error {
-
-	klog.Infof("create lv %s size:%d vg:%s devicespattern:%s dir:%s type:%s ", volID, lvSize, vgName, devicesPattern, volID, lvmType)
-
-	output, err := createVG(vgName, devicesPattern)
-	if err != nil {
-		return fmt.Errorf("unable to create vg: %v output:%s", err, output)
-	}
-
-	output, err = createLVS(context.Background(), vgName, volID, lvSize, lvmType)
-	if err != nil {
-		return fmt.Errorf("unable to create lv: %v output:%s", err, output)
-	}
-	return nil
-}
-
-func devices(devicesPattern string) (devices []string, err error) {
-	klog.Infof("search devices :%s ", devicesPattern)
-	matches, err := filepath.Glob(devicesPattern)
-	if err != nil {
-		return nil, err
-	}
-	klog.Infof("found: %s", matches)
-	return matches, nil
 }
 
 func mountLV(lvname, mountPath string, vgName string) (string, error) {
@@ -233,6 +221,146 @@ func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
 	return "", nil
 }
 
+func umountLV(lvName string, vgName string) (string, error) {
+
+	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvName)
+
+	cmd := exec.Command("umount", "--lazy", "--force", lvPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		klog.Errorf("unable to umount %s from %s output:%s err:%v", lvPath, string(out), err)
+	}
+	return "", nil
+}
+
+func createProvisionerPod(va volumeAction) (err error) {
+	if va.name == "" || va.nodeName == "" {
+		return fmt.Errorf("invalid empty name or path or node")
+	}
+	if va.action == actionTypeCreate && va.lvmType == "" {
+		return fmt.Errorf("createlv without lvm type")
+	}
+
+	args := []string{}
+	if va.action == actionTypeCreate {
+		args = append(args, "createlv", "--lvsize", fmt.Sprintf("%d", va.size), "--devices", va.devicesPattern, "--lvmtype", va.lvmType)
+	}
+	if va.action == actionTypeDelete {
+		args = append(args, "deletelv")
+	}
+	args = append(args, "--lvname", va.name, "--vgname", "csi-lvm")
+	if va.isBlock {
+		args = append(args, "--block")
+	}
+
+	klog.Infof("start provisionerPod with args:%s", args)
+	hostPathType := v1.HostPathDirectoryOrCreate
+	privileged := true
+	provisionerPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: string(va.action) + "-" + va.name,
+		},
+		Spec: v1.PodSpec{
+			RestartPolicy: v1.RestartPolicyNever,
+			NodeName:      va.nodeName,
+			Tolerations: []v1.Toleration{
+				{
+					Operator: v1.TolerationOpExists,
+				},
+			},
+			Containers: []v1.Container{
+				{
+					Name:    "csi-lvm-" + string(va.action),
+					Image:   va.provisionerImage,
+					Command: []string{"/csi-lvmplugin-provisioner"},
+					Args:    args,
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:      "devices",
+							ReadOnly:  false,
+							MountPath: "/dev",
+						},
+						{
+							Name:      "modules",
+							ReadOnly:  false,
+							MountPath: "/lib/modules",
+						},
+					},
+					ImagePullPolicy: va.pullPolicy,
+					SecurityContext: &v1.SecurityContext{
+						Privileged: &privileged,
+					},
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("50m"),
+							"memory": resource.MustParse("50Mi"),
+						},
+						Limits: v1.ResourceList{
+							"cpu":    resource.MustParse("100m"),
+							"memory": resource.MustParse("100Mi"),
+						},
+					},
+				},
+			},
+			Volumes: []v1.Volume{
+				{
+					Name: "devices",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/dev",
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "modules",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/lib/modules",
+							Type: &hostPathType,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// If it already exists due to some previous errors, the pod will be cleaned up later automatically
+	// https://github.com/rancher/local-path-provisioner/issues/27
+	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(provisionerPod)
+	if err != nil && !k8serror.IsAlreadyExists(err) {
+		return err
+	}
+
+	defer func() {
+		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(provisionerPod.Name, &metav1.DeleteOptions{})
+		if e != nil {
+			klog.Errorf("unable to delete the provisioner pod: %v", e)
+		}
+	}()
+
+	completed := false
+	retrySeconds := 20
+	for i := 0; i < retrySeconds; i++ {
+		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(provisionerPod.Name, metav1.GetOptions{})
+		if err != nil {
+			klog.Errorf("error reading provisioner pod:%v", err)
+		} else if pod.Status.Phase == v1.PodSucceeded {
+			klog.Info("provisioner pod terminated successfully")
+			completed = true
+			break
+		}
+		klog.Infof("provisioner pod status:%s", pod.Status.Phase)
+		time.Sleep(1 * time.Second)
+	}
+	if !completed {
+		return fmt.Errorf("create process timeout after %v seconds", retrySeconds)
+	}
+
+	klog.Infof("Volume %v has been %vd on %v", va.name, va.action, va.nodeName)
+	return nil
+}
+
 func vgExists(name string) bool {
 	vgs, err := commands.ListVG(context.Background())
 	if err != nil {
@@ -249,127 +377,16 @@ func vgExists(name string) bool {
 	return vgexists
 }
 
-func createVG(name string, devicesPattern string) (string, error) {
-	vgexists := vgExists(name)
-	if vgexists {
-		klog.Infof("volumegroup: %s already exists\n", name)
-		return name, nil
-	} else {
-		// scan for vgs and activate if any
-		cmd := exec.Command("vgscan")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			klog.Infof("unable to scan for volumegroups:%s %v", out, err)
-		}
-		cmd = exec.Command("vgchange", "-ay")
-		_, err = cmd.CombinedOutput()
-		if err != nil {
-			klog.Infof("unable to activate volumegroups:%s %v", out, err)
-		}
-		// now check again for existing vg again
-		vgexists = vgExists(name)
-		if vgexists {
-			klog.Infof("volumegroup: %s already exists\n", name)
-			return name, nil
-		}
-	}
-
-	physicalVolumes, err := devices(devicesPattern)
-	if err != nil {
-		return "", fmt.Errorf("unable to lookup devices from devicesPattern %s, err:%v", devicesPattern, err)
-	}
-	tags := []string{"vg.metal-pod.io/csi-lvm"}
-
-	args := []string{"-v", name}
-	args = append(args, physicalVolumes...)
-	for _, tag := range tags {
-		args = append(args, "--add-tag", tag)
-	}
-	klog.Infof("create vg with command: vgcreate %v", args)
-	cmd := exec.Command("vgcreate", args...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-// createLV creates a new volume
-func createLVS(ctx context.Context, vg string, name string, size int64, lvmType string) (string, error) {
-	lvs, err := commands.ListLV(context.Background(), vg+"/"+name)
-	if err != nil {
-		klog.Infof("unable to list existing logicalvolumes:%v", err)
-	}
-	lvExists := false
-	for _, lv := range lvs {
-		klog.Infof("compare lv:%s with:%s\n", lv.Name, name)
-		if strings.Contains(lv.Name, name) {
-			lvExists = true
-			break
-		}
-	}
-
-	if lvExists {
-		klog.Infof("logicalvolume: %s already exists\n", name)
-		return name, nil
-	}
-
-	if size == 0 {
-		return "", fmt.Errorf("size must be greater than 0")
-	}
-
-	args := []string{"-v", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
-
-	pvs, err := pvCount(vg)
-	if err != nil {
-		return "", fmt.Errorf("unable to determine pv count of vg: %v", err)
-	}
-
-	if pvs < 2 {
-		klog.Warning("pvcount is <2 only linear is supported")
-		lvmType = "linear"
-	}
-
-	switch lvmType {
-	case "striped":
-		args = append(args, "--type", "striped", "--stripes", fmt.Sprintf("%d", pvs))
-	case "mirror":
-		args = append(args, "--type", "raid1", "--mirrors", "1", "--nosync")
-	case "linear":
-	default:
-		return "", fmt.Errorf("unsupported lvmtype: %s", lvmType)
-	}
-
-	tags := []string{"lv.metal-pod.io/csi-lvm"}
-	for _, tag := range tags {
-		args = append(args, "--add-tag", tag)
-	}
-	args = append(args, vg)
-	klog.Infof("lvreate %s", args)
-	cmd := exec.Command("lvcreate", args...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
-
-func pvCount(vgName string) (int, error) {
-	cmd := exec.Command("vgs", vgName, "--noheadings", "-o", "pv_count")
+func vgactivate(name string) {
+	// scan for vgs and activate if any
+	cmd := exec.Command("vgscan")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return 0, err
+		klog.Infof("unable to scan for volumegroups:%s %v", out, err)
 	}
-	outStr := strings.TrimSpace(string(out))
-	count, err := strconv.Atoi(outStr)
+	cmd = exec.Command("vgchange", "-ay")
+	_, err = cmd.CombinedOutput()
 	if err != nil {
-		return 0, err
+		klog.Infof("unable to activate volumegroups:%s %v", out, err)
 	}
-	return count, nil
-}
-
-func umountLV(lvName string, vgName string) (string, error) {
-
-	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvName)
-
-	cmd := exec.Command("umount", "--lazy", "--force", lvPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		klog.Errorf("unable to umount %s from %s output:%s err:%v", lvPath, string(out), err)
-	}
-	return "", nil
 }

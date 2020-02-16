@@ -18,7 +18,7 @@ package lvm
 
 import (
 	"fmt"
-	"os"
+	"os/exec"
 	"strconv"
 
 	"github.com/docker/go-units"
@@ -42,6 +42,25 @@ type nodeServer struct {
 }
 
 func NewNodeServer(nodeId string, ephemeral bool, maxVolumesPerNode int64, devicesPattern string, vgName string) *nodeServer {
+
+	// revive existing volumes
+	vgexists := vgExists(vgName)
+	if !vgexists {
+		klog.Infof("volumegroup: %s not found\n", vgName)
+		vgactivate(vgName)
+		// now check again for existing vg again
+		vgexists = vgExists(vgName)
+		if !vgexists {
+			klog.Infof("volumegroup: %s not found\n", vgName)
+			return nil
+		}
+	}
+	cmd := exec.Command("lvchange", "-ay", vgName)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		klog.Infof("unable to activate logical volumes:%s %v", out, err)
+	}
+
 	return &nodeServer{
 		nodeID:            nodeId,
 		ephemeral:         ephemeral,
@@ -122,11 +141,6 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
 	}
 
-	err = createLvmVolume(volumeID, capacity, requestedAccessType, false /* ephemeral */, ns.devicesPattern, lvmType, ns.vgName)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", volumeID, err)
-	}
-
 	// if ephemeral is specified, create volume here to avoid errors
 	if ephemeralVolume {
 		volID := req.GetVolumeId()
@@ -141,11 +155,9 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("failed to parse size(%s) of ephemeral inline volume: %s", val, err.Error()))
 		}
 
-		err = createLvmVolume(req.GetVolumeId(), size, mountAccess, ephemeralVolume, ns.devicesPattern, lvmType, ns.vgName)
-		if err != nil && !os.IsExist(err) {
-			glog.Error("ephemeral mode failed to create volume: ", err)
-			return nil, status.Error(codes.Internal, err.Error())
-		}
+		// Todo: ephemeral
+		glog.V(4).Infof("TODO: ephemeral mode: created volume: %s, %s, %s", volID, size, requestedAccessType)
+
 		glog.V(4).Infof("ephemeral mode: created volume: %s", volID)
 	}
 

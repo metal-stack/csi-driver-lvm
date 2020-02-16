@@ -67,6 +67,9 @@ spec:
         - --devices=$(CSI_DEVICESPATTERN)
         - --nodeid=$(KUBE_NODE_NAME)
         - --vgname=$(CSI_VGNAME)
+        - --namespace=$(CSI_NAMESPACE)
+        - --provisionerimage=$(CSI_PROVISIONER_IMAGE)
+        - --pullpolicy=$(CSI_PULL_POILICY)
         env:
         - name: CSI_ENDPOINT
           value: unix:///csi/csi.sock
@@ -76,10 +79,16 @@ spec:
               apiVersion: v1
               fieldPath: spec.nodeName
         - name: CSI_DEVICESPATTERN
-          value: /dev/loop[0-1]
-#          value: "/dev/nvme[0-9]n[0-9]"
+#          value: /dev/loop[0-1]
+          value: "/dev/nvme[0-9]n[0-9]"
         - name: CSI_VGNAME
           value: csi-lvm
+        - name: CSI_NAMESPACE
+          value: default
+        - name: CSI_PROVISIONER_IMAGE
+          value: mwennrich/csi-lvmplugin-provisioner:latest
+        - name: CSI_PULL_POILICY
+          value: Always
         image: mwennrich/lvmplugin:latest
         imagePullPolicy: Always
         livenessProbe:

@@ -19,12 +19,16 @@ package lvm
 import (
 	"strconv"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"github.com/container-storage-interface/spec/lib/go/csi"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/klog"
 )
 
 const (
@@ -40,15 +44,29 @@ const (
 )
 
 type controllerServer struct {
-	caps           []*csi.ControllerServiceCapability
-	nodeID         string
-	devicesPattern string
-	vgName         string
+	caps             []*csi.ControllerServiceCapability
+	nodeID           string
+	devicesPattern   string
+	vgName           string
+	kubeClient       kubernetes.Clientset
+	provisionerImage string
+	pullPolicy       v1.PullPolicy
+	namespace        string
 }
 
-func NewControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string) *controllerServer {
+func NewControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) *controllerServer {
 	if ephemeral {
 		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID}
+	}
+
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+	// creates the clientset
+	kubeClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
 	}
 	return &controllerServer{
 		caps: getControllerServiceCapabilities(
@@ -60,9 +78,13 @@ func NewControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 				//				csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
 				//				csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 			}),
-		nodeID:         nodeID,
-		devicesPattern: devicesPattern,
-		vgName:         vgName,
+		nodeID:           nodeID,
+		devicesPattern:   devicesPattern,
+		vgName:           vgName,
+		kubeClient:       *kubeClient,
+		namespace:        namespace,
+		provisionerImage: provisionerImage,
+		pullPolicy:       pullPolicy,
 	}
 }
 
@@ -81,20 +103,92 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		return nil, status.Error(codes.InvalidArgument, "Volume Capabilities missing in request")
 	}
 
-	glog.V(4).Infof("fake successful creation of volume %s at path %s", req.GetName())
+	// Keep a record of the requested access types.
+	var accessTypeMount, accessTypeBlock bool
+
+	for _, cap := range caps {
+		if cap.GetBlock() != nil {
+			accessTypeBlock = true
+		}
+		if cap.GetMount() != nil {
+			accessTypeMount = true
+		}
+	}
+	// A real driver would also need to check that the other
+	// fields in VolumeCapabilities are sane. The check above is
+	// just enough to pass the "[Testpattern: Dynamic PV (block
+	// volmode)] volumeMode should fail in binding dynamic
+	// provisioned PV to PVC" storage E2E test.
+
+	if accessTypeBlock && accessTypeMount {
+		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
+	}
+
+	// Check for maximum available capacity
+	capacity := int64(req.GetCapacityRange().GetRequiredBytes())
+	if capacity >= maxStorageCapacity {
+		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
+	}
+
+	// TODO
+	// lvmType is currently hard-coded to linear
+	// https://github.com/kubernetes-csi/external-provisioner/pull/399
+	lvmType := req.GetParameters()["type"]
+	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
+		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
+	}
+
 	volumeContext := req.GetParameters()
 	//size, err:=strconv.ParseInt(req.GetCapacityRange().GetRequiredBytes(), 10, 64)
 	size := strconv.FormatInt(req.GetCapacityRange().GetRequiredBytes(), 10)
 
 	volumeContext["RequiredBytes"] = size
 
+	pvcName := req.GetParameters()["csi.storage.k8s.io/pvc/name"]
+	pvcNamespace := req.GetParameters()["csi.storage.k8s.io/pvc/namespace"]
+
+	pvc, err := cs.kubeClient.CoreV1().PersistentVolumeClaims(pvcNamespace).Get(pvcName, metav1.GetOptions{})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "couldn't pvc for volume: %s/%s", pvcNamespace, pvcName)
+	}
+
+	node := pvc.ObjectMeta.GetAnnotations()["volume.kubernetes.io/selected-node"]
+	if node == "" {
+		return nil, status.Errorf(codes.Internal, "couldn't find node for volume: %s/%s", pvcNamespace, pvcName)
+	}
+
+	topology := []*csi.Topology{&csi.Topology{
+		Segments: map[string]string{TopologyKeyNode: node},
+	}}
+
+	glog.V(3).Infof("creating volume %s on node: %s", req.GetName(), node)
+
+	va := volumeAction{
+		action:           actionTypeCreate,
+		name:             req.GetName(),
+		nodeName:         node,
+		size:             req.GetCapacityRange().GetRequiredBytes(),
+		lvmType:          lvmType,
+		isBlock:          accessTypeBlock,
+		devicesPattern:   cs.devicesPattern,
+		pullPolicy:       cs.pullPolicy,
+		provisionerImage: cs.provisionerImage,
+		kubeClient:       cs.kubeClient,
+		namespace:        cs.namespace,
+	}
+	if err := createProvisionerPod(va); err != nil {
+		klog.Errorf("error creating provisioner pod :%v", err)
+		return nil, err
+	}
+
 	// we can't create a volume since we don't yet know on which node the volume is needed, so we fake a successful creation
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:      req.GetName(),
-			CapacityBytes: req.GetCapacityRange().GetRequiredBytes(),
-			VolumeContext: volumeContext,
-			ContentSource: req.GetVolumeContentSource(),
+			VolumeId:           req.GetName(),
+			CapacityBytes:      req.GetCapacityRange().GetRequiredBytes(),
+			VolumeContext:      volumeContext,
+			ContentSource:      req.GetVolumeContentSource(),
+			AccessibleTopology: topology,
 		},
 	}, nil
 }
@@ -111,8 +205,29 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 	}
 
 	volId := req.GetVolumeId()
-	if err := deleteLvmVolume(volId, cs.vgName); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete volume %v: %v", volId, err)
+
+	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(volId, metav1.GetOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+	glog.V(4).Infof("volume %s to be deleted", volume)
+	ns := volume.Spec.NodeAffinity.Required.NodeSelectorTerms
+	node := ns[0].MatchExpressions[0].Values[0]
+
+	glog.V(4).Infof("from node %s ", node)
+
+	va := volumeAction{
+		action:           actionTypeDelete,
+		name:             req.GetVolumeId(),
+		nodeName:         node,
+		pullPolicy:       cs.pullPolicy,
+		provisionerImage: cs.provisionerImage,
+		kubeClient:       cs.kubeClient,
+		namespace:        cs.namespace,
+	}
+	if err := createProvisionerPod(va); err != nil {
+		klog.Errorf("error creating provisioner pod :%v", err)
+		return nil, err
 	}
 
 	glog.V(4).Infof("volume %v successfully deleted", volId)
