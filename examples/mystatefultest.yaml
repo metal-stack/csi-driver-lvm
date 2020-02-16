@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+  name: privpod
+---
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: psp-privpod
+spec:
+  allowPrivilegeEscalation: true
+  privileged: true
+  fsGroup:
+    rule: RunAsAny
+  privileged: true
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes:
+  - '*'
+  hostNetwork: true
+  hostIPC: true
+  hostPID: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: psp-privpod-role
+rules:
+- apiGroups:
+  - extensions
+  resources:
+  - podsecuritypolicies
+  resourceNames:
+  - psp-privpod
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: RoleBinding
+metadata:
+  name: psp-rolebinding-privpod
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: psp-privpod-role
+subjects:
+- apiGroup: ""
+  kind: ServiceAccount
+  name: privpod
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: busybox
+    redeploy: "2"
+  name: busybox
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: busybox
+  serviceName: busybox-headless
+  template:
+    metadata:
+      labels:
+        app: busybox
+        name: busybox
+    spec:
+      serviceAccount: privpod
+      serviceAccountName: privpod
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - busybox
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - image: busybox:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - sleep
+          - "3600"
+        name: busybox
+        volumeMounts:
+        - mountPath: /data
+          name: storage
+  volumeClaimTemplates:
+  - metadata:
+      creationTimestamp: null
+      name: storage
+    spec:
+      storageClassName: csi-lvm-sc-linear
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Mi
+      volumeMode: Filesystem
