@@ -102,29 +102,22 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	if cap.GetMount() != nil {
 		accessTypeMount = true
 	}
-	// A real driver would also need to check that the other
-	// fields in VolumeCapabilities are sane. The check above is
-	// just enough to pass the "[Testpattern: Dynamic PV (block
-	// volmode)] volumeMode should fail in binding dynamic
-	// provisioned PV to PVC" storage E2E test.
 
+	// sanity checks (probably more sanity checks are needed later)
 	if accessTypeBlock && accessTypeMount {
 		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
 	}
 
-	// Check for maximum available capacity
-	volumeID := req.GetVolumeId()
-
 	// TODO
 	// impelment ephemeral, either by creation of a provisioner pod (though not needed, since this runs on the node already)
-	// or directly  by a exported func
+	// or directly by a shared, exported func
 
 	// if ephemeral is specified, create volume here to avoid errors
 	if ephemeralVolume {
 		capacityBytes, err := strconv.Atoi(req.GetVolumeContext()["RequiredBytes"])
 
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", volumeID, err)
+			return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", req.GetVolumeId(), err)
 		}
 		capacity := int64(capacityBytes)
 

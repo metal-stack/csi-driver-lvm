@@ -262,6 +262,39 @@ func (cs *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req 
 	}, nil
 }
 
+func (cs *controllerServer) validateControllerServiceRequest(c csi.ControllerServiceCapability_RPC_Type) error {
+	if c == csi.ControllerServiceCapability_RPC_UNKNOWN {
+		return nil
+	}
+
+	for _, cap := range cs.caps {
+		if c == cap.GetRpc().GetType() {
+			return nil
+		}
+	}
+	return status.Errorf(codes.InvalidArgument, "unsupported capability %s", c)
+}
+
+func getControllerServiceCapabilities(cl []csi.ControllerServiceCapability_RPC_Type) []*csi.ControllerServiceCapability {
+	var csc []*csi.ControllerServiceCapability
+
+	for _, cap := range cl {
+		klog.Infof("Enabling controller service capability: %v", cap.String())
+		csc = append(csc, &csi.ControllerServiceCapability{
+			Type: &csi.ControllerServiceCapability_Rpc{
+				Rpc: &csi.ControllerServiceCapability_RPC{
+					Type: cap,
+				},
+			},
+		})
+	}
+
+	return csc
+}
+
+// Following functions will never be implemented
+// use the "NodeXXX" versions of the nodeserver instead
+
 func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
@@ -292,34 +325,4 @@ func (cs *controllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnap
 
 func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
-}
-
-func (cs *controllerServer) validateControllerServiceRequest(c csi.ControllerServiceCapability_RPC_Type) error {
-	if c == csi.ControllerServiceCapability_RPC_UNKNOWN {
-		return nil
-	}
-
-	for _, cap := range cs.caps {
-		if c == cap.GetRpc().GetType() {
-			return nil
-		}
-	}
-	return status.Errorf(codes.InvalidArgument, "unsupported capability %s", c)
-}
-
-func getControllerServiceCapabilities(cl []csi.ControllerServiceCapability_RPC_Type) []*csi.ControllerServiceCapability {
-	var csc []*csi.ControllerServiceCapability
-
-	for _, cap := range cl {
-		klog.Infof("Enabling controller service capability: %v", cap.String())
-		csc = append(csc, &csi.ControllerServiceCapability{
-			Type: &csi.ControllerServiceCapability_Rpc{
-				Rpc: &csi.ControllerServiceCapability_RPC{
-					Type: cap,
-				},
-			},
-		})
-	}
-
-	return csc
 }

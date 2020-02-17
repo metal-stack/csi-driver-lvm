@@ -84,6 +84,8 @@ func createLV(c *cli.Context) error {
 
 	klog.Infof("create lv %s size:%d vg:%s devicespattern:%s  type:%s block:%t", lvName, lvSize, vgName, devicesPattern, lvmType, blockMode)
 
+	// TODO
+	// createVG could get called once at the start of the nodeserver
 	output, err := createVG(vgName, devicesPattern)
 	if err != nil {
 		return fmt.Errorf("unable to create vg: %v output:%s", err, output)
@@ -93,23 +95,13 @@ func createLV(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to create lv: %v output:%s", err, output)
 	}
-	/*
-		if !blockMode {
-			output, err = mountLV(lvName, vgName, dirName)
-			if err != nil {
-				return fmt.Errorf("unable to mount lv: %v output:%s", err, output)
-			}
-			klog.Infof("mounted lv %s size:%d vg:%s devices:%s created", lvName, lvSize, vgName, devicesPattern)
-		} else {
-			output, err = bindMountLV(lvName, vgName, dirName)
-			if err != nil {
-				return fmt.Errorf("unable to bind mount lv: %v output:%s", err, output)
-			}
-			klog.Infof("block lv %s size:%d vg:%s devices:%s created", lvName, lvSize, vgName, devicesPattern)
-		}
-	*/
 	return nil
 }
+
+// TODO
+// move everything below to lvm package
+// ephemeral volumes can be created directly on the node without a provisioner pod,
+// so these functions are needed there too anyway
 
 func devices(devicesPattern []string) (devices []string, err error) {
 	for _, devicePattern := range devicesPattern {
@@ -124,7 +116,6 @@ func devices(devicesPattern []string) (devices []string, err error) {
 	return devices, nil
 }
 
-//move this to nodeserver ?
 func createVG(name string, devicesPattern []string) (string, error) {
 	vgexists := lvm.VgExists(name)
 	if vgexists {
@@ -202,6 +193,8 @@ func createLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 		return "", fmt.Errorf("unsupported lvmtype: %s", lvmType)
 	}
 
+	// TODO
+	// isBlock tags are not needed with the csi driver
 	tags := []string{"lv.metal-stack.io/csi-lvm", "isBlock=" + strconv.FormatBool(blockMode)}
 	for _, tag := range tags {
 		args = append(args, "--add-tag", tag)
