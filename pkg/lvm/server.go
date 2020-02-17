@@ -31,17 +31,16 @@ import (
 	"github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
 )
 
-func NewNonBlockingGRPCServer() *nonBlockingGRPCServer {
+func newNonBlockingGRPCServer() *nonBlockingGRPCServer {
 	return &nonBlockingGRPCServer{}
 }
 
-// NonBlocking server
 type nonBlockingGRPCServer struct {
 	wg     sync.WaitGroup
 	server *grpc.Server
 }
 
-func (s *nonBlockingGRPCServer) Start(endpoint string, ids csi.IdentityServer, cs csi.ControllerServer, ns csi.NodeServer) {
+func (s *nonBlockingGRPCServer) start(endpoint string, ids csi.IdentityServer, cs csi.ControllerServer, ns csi.NodeServer) {
 
 	s.wg.Add(1)
 
@@ -50,7 +49,7 @@ func (s *nonBlockingGRPCServer) Start(endpoint string, ids csi.IdentityServer, c
 	return
 }
 
-func (s *nonBlockingGRPCServer) Wait() {
+func (s *nonBlockingGRPCServer) wait() {
 	s.wg.Wait()
 }
 

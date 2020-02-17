@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -126,92 +124,14 @@ func devices(devicesPattern []string) (devices []string, err error) {
 	return devices, nil
 }
 
-func mountLV(lvname, vgname, directory string) (string, error) {
-	// check for format with blkid /dev/csi-lvm/pvc-xxxxx
-	// /dev/dm-3: UUID="d1910e3a-32a9-48d2-aa2e-e5ad018237c9" TYPE="ext4"
-	lvPath := fmt.Sprintf("/dev/%s/%s", vgname, lvname)
-
-	formatted := false
-	// check for already formatted
-	cmd := exec.Command("blkid", lvPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		klog.Infof("unable to check if %s is already formatted:%v", lvPath, err)
-	}
-	if strings.Contains(string(out), "ext4") {
-		formatted = true
-	}
-
-	mountPath := path.Join(directory, lvname)
-	if !formatted {
-		klog.Infof("formatting with mkfs.ext4 %s", lvPath)
-		cmd = exec.Command("mkfs.ext4", lvPath)
-		out, err = cmd.CombinedOutput()
-		if err != nil {
-			return string(out), fmt.Errorf("unable to format lv:%s err:%v", lvname, err)
-		}
-	}
-
-	err = os.MkdirAll(mountPath, 0777)
-	if err != nil {
-		return string(out), fmt.Errorf("unable to create mount directory for lv:%s err:%v", lvname, err)
-	}
-
-	// --make-shared is required that this mount is visible outside this container.
-	mountArgs := []string{"--make-shared", "-t", "ext4", lvPath, mountPath}
-	klog.Infof("mountlv command: mount %s", mountArgs)
-	cmd = exec.Command("mount", mountArgs...)
-	out, err = cmd.CombinedOutput()
-	if err != nil {
-		mountOutput := string(out)
-		if !strings.Contains(mountOutput, "already mounted") {
-			return string(out), fmt.Errorf("unable to mount %s to %s err:%v output:%s", lvPath, mountPath, err, out)
-		}
-	}
-	err = os.Chmod(mountPath, 0777)
-	if err != nil {
-		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%v", mountPath, err)
-	}
-	klog.Infof("mountlv output:%s", out)
-	return "", nil
-}
-
-func bindMountLV(lvname, vgname, directory string) (string, error) {
-	lvPath := fmt.Sprintf("/dev/%s/%s", vgname, lvname)
-	mountPath := path.Join(directory, lvname)
-	_, err := os.Create(mountPath)
-	if err != nil {
-		return "", fmt.Errorf("unable to create mount directory for lv:%s err:%v", lvname, err)
-	}
-
-	// --make-shared is required that this mount is visible outside this container.
-	// --bind is required for raw block volumes to make them visible inside the pod.
-	mountArgs := []string{"--make-shared", "--bind", lvPath, mountPath}
-	klog.Infof("bindmountlv command: mount %s", mountArgs)
-	cmd := exec.Command("mount", mountArgs...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		mountOutput := string(out)
-		if !strings.Contains(mountOutput, "already mounted") {
-			return string(out), fmt.Errorf("unable to mount %s to %s err:%v output:%s", lvPath, mountPath, err, out)
-		}
-	}
-	err = os.Chmod(mountPath, 0777)
-	if err != nil {
-		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%v", mountPath, err)
-	}
-	klog.Infof("bindmountlv output:%s", out)
-	return "", nil
-}
-
-//move this to nodeserver creation?
+//move this to nodeserver ?
 func createVG(name string, devicesPattern []string) (string, error) {
 	vgexists := lvm.VgExists(name)
 	if vgexists {
 		klog.Infof("volumegroup: %s already exists\n", name)
 		return name, nil
 	}
-	lvm.Vgactivate(name)
+	lvm.VgActivate(name)
 	// now check again for existing vg again
 	vgexists = lvm.VgExists(name)
 	if vgexists {

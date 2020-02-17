@@ -20,7 +20,6 @@ import (
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -54,7 +53,8 @@ type controllerServer struct {
 	namespace        string
 }
 
-func NewControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) *controllerServer {
+// NewControllerServer
+func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) *controllerServer {
 	if ephemeral {
 		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID}
 	}
@@ -90,7 +90,7 @@ func NewControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 
 func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	if err := cs.validateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME); err != nil {
-		glog.V(3).Infof("invalid create volume req: %v", req)
+		klog.V(3).Infof("invalid create volume req: %v", req)
 		return nil, err
 	}
 
@@ -114,15 +114,13 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 			accessTypeMount = true
 		}
 	}
-	// A real driver would also need to check that the other
-	// fields in VolumeCapabilities are sane. The check above is
-	// just enough to pass the "[Testpattern: Dynamic PV (block
-	// volmode)] volumeMode should fail in binding dynamic
-	// provisioned PV to PVC" storage E2E test.
 
 	if accessTypeBlock && accessTypeMount {
 		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
 	}
+
+	// TODO
+	// check remaining size of disk for maxStorageCapacity
 
 	// Check for maximum available capacity
 	capacity := int64(req.GetCapacityRange().GetRequiredBytes())
@@ -130,16 +128,12 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
 	}
 
-	// TODO
-	// lvmType is currently hard-coded to linear
-	// https://github.com/kubernetes-csi/external-provisioner/pull/399
 	lvmType := req.GetParameters()["type"]
 	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
 
 	volumeContext := req.GetParameters()
-	//size, err:=strconv.ParseInt(req.GetCapacityRange().GetRequiredBytes(), 10, 64)
 	size := strconv.FormatInt(req.GetCapacityRange().GetRequiredBytes(), 10)
 
 	volumeContext["RequiredBytes"] = size
@@ -158,10 +152,10 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	}
 
 	topology := []*csi.Topology{&csi.Topology{
-		Segments: map[string]string{TopologyKeyNode: node},
+		Segments: map[string]string{topologyKeyNode: node},
 	}}
 
-	glog.V(3).Infof("creating volume %s on node: %s", req.GetName(), node)
+	klog.V(3).Infof("creating volume %s on node: %s", req.GetName(), node)
 
 	va := volumeAction{
 		action:           actionTypeCreate,
@@ -181,7 +175,6 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		return nil, err
 	}
 
-	// we can't create a volume since we don't yet know on which node the volume is needed, so we fake a successful creation
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:           req.GetName(),
@@ -200,21 +193,21 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 	}
 
 	if err := cs.validateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME); err != nil {
-		glog.V(3).Infof("invalid delete volume req: %v", req)
+		klog.V(3).Infof("invalid delete volume req: %v", req)
 		return nil, err
 	}
 
-	volId := req.GetVolumeId()
+	volID := req.GetVolumeId()
 
-	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(volId, metav1.GetOptions{})
+	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(volID, metav1.GetOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
-	glog.V(4).Infof("volume %s to be deleted", volume)
+	klog.V(4).Infof("volume %s to be deleted", volume)
 	ns := volume.Spec.NodeAffinity.Required.NodeSelectorTerms
 	node := ns[0].MatchExpressions[0].Values[0]
 
-	glog.V(4).Infof("from node %s ", node)
+	klog.V(4).Infof("from node %s ", node)
 
 	va := volumeAction{
 		action:           actionTypeDelete,
@@ -230,7 +223,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		return nil, err
 	}
 
-	glog.V(4).Infof("volume %v successfully deleted", volId)
+	klog.V(4).Infof("volume %v successfully deleted", volID)
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
@@ -285,8 +278,6 @@ func (cs *controllerServer) ListVolumes(ctx context.Context, req *csi.ListVolume
 	return nil, status.Error(codes.Unimplemented, "")
 }
 
-// CreateSnapshot uses tar command to create snapshot for lvm volume. The tar command can quickly create
-// archives of entire directories. The host image must have "tar" binaries in /bin, /usr/sbin, or /usr/bin.
 func (cs *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
@@ -320,7 +311,7 @@ func getControllerServiceCapabilities(cl []csi.ControllerServiceCapability_RPC_T
 	var csc []*csi.ControllerServiceCapability
 
 	for _, cap := range cl {
-		glog.Infof("Enabling controller service capability: %v", cap.String())
+		klog.Infof("Enabling controller service capability: %v", cap.String())
 		csc = append(csc, &csi.ControllerServiceCapability{
 			Type: &csi.ControllerServiceCapability_Rpc{
 				Rpc: &csi.ControllerServiceCapability_RPC{

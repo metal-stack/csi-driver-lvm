@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	"github.com/google/lvmd/commands"
 
 	v1 "k8s.io/api/core/v1"
@@ -45,7 +44,8 @@ const (
 	tib100 int64 = tib * 100
 )
 
-type lvm struct {
+// Lvm contains the main parameters
+type Lvm struct {
 	name              string
 	nodeID            string
 	version           string
@@ -95,7 +95,8 @@ const (
 	pullIfNotPresent = "ifnotpresent"
 )
 
-func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*lvm, error) {
+// NewLvmDriver creates the driver
+func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*Lvm, error) {
 	if driverName == "" {
 		return nil, fmt.Errorf("No driver name provided")
 	}
@@ -116,10 +117,10 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 		pp = v1.PullIfNotPresent
 	}
 
-	glog.Infof("Driver: %v ", driverName)
-	glog.Infof("Version: %s", vendorVersion)
+	klog.Infof("Driver: %v ", driverName)
+	klog.Infof("Version: %s", vendorVersion)
 
-	return &lvm{
+	return &Lvm{
 		name:              driverName,
 		version:           vendorVersion,
 		nodeID:            nodeID,
@@ -134,15 +135,16 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 	}, nil
 }
 
-func (lvm *lvm) Run() {
+// Run starts the lvm plugin
+func (lvm *Lvm) Run() {
 	// Create GRPC servers
-	lvm.ids = NewIdentityServer(lvm.name, lvm.version)
-	lvm.ns = NewNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
-	lvm.cs = NewControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
+	lvm.ids = newIdentityServer(lvm.name, lvm.version)
+	lvm.ns = newNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
+	lvm.cs = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
 
-	s := NewNonBlockingGRPCServer()
-	s.Start(lvm.endpoint, lvm.ids, lvm.cs, lvm.ns)
-	s.Wait()
+	s := newNonBlockingGRPCServer()
+	s.start(lvm.endpoint, lvm.ids, lvm.cs, lvm.ns)
+	s.wait()
 }
 
 func mountLV(lvname, mountPath string, vgName string) (string, error) {
@@ -270,7 +272,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 			},
 			Containers: []v1.Container{
 				{
-					Name:    "csi-lvm-" + string(va.action),
+					Name:    "csi-lvmplugin-" + string(va.action),
 					Image:   va.provisionerImage,
 					Command: []string{"/csi-lvmplugin-provisioner"},
 					Args:    args,
@@ -361,6 +363,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 	return nil
 }
 
+// VgExists checks if the given volume group exists
 func VgExists(name string) bool {
 	vgs, err := commands.ListVG(context.Background())
 	if err != nil {
@@ -377,7 +380,8 @@ func VgExists(name string) bool {
 	return vgexists
 }
 
-func Vgactivate(name string) {
+// VgActivate execute vgchange -ay to activate all volumes of the volume group
+func VgActivate(name string) {
 	// scan for vgs and activate if any
 	cmd := exec.Command("vgscan")
 	out, err := cmd.CombinedOutput()

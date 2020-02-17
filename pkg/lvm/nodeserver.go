@@ -22,7 +22,6 @@ import (
 	"strconv"
 
 	"github.com/docker/go-units"
-	"github.com/golang/glog"
 	"golang.org/x/net/context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -31,7 +30,7 @@ import (
 	"k8s.io/klog"
 )
 
-const TopologyKeyNode = "topology.lvm.csi/node"
+const topologyKeyNode = "topology.lvm.csi/node"
 
 type nodeServer struct {
 	nodeID            string
@@ -41,13 +40,13 @@ type nodeServer struct {
 	vgName            string
 }
 
-func NewNodeServer(nodeId string, ephemeral bool, maxVolumesPerNode int64, devicesPattern string, vgName string) *nodeServer {
+func newNodeServer(nodeID string, ephemeral bool, maxVolumesPerNode int64, devicesPattern string, vgName string) *nodeServer {
 
-	// revive existing volumes
+	// revive existing volumes at start of node server
 	vgexists := VgExists(vgName)
 	if !vgexists {
 		klog.Infof("volumegroup: %s not found\n", vgName)
-		Vgactivate(vgName)
+		VgActivate(vgName)
 		// now check again for existing vg again
 		vgexists = VgExists(vgName)
 		if !vgexists {
@@ -62,7 +61,7 @@ func NewNodeServer(nodeId string, ephemeral bool, maxVolumesPerNode int64, devic
 	}
 
 	return &nodeServer{
-		nodeID:            nodeId,
+		nodeID:            nodeID,
 		ephemeral:         ephemeral,
 		maxVolumesPerNode: maxVolumesPerNode,
 		devicesPattern:    devicesPattern,
@@ -84,21 +83,16 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 
 	targetPath := req.GetTargetPath()
-	ephemeralVolume := req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "true" ||
-		req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "" && ns.ephemeral // Kubernetes 1.15 doesn't have csi.storage.k8s.io/ephemeral.
 
 	if req.GetVolumeCapability().GetBlock() != nil &&
 		req.GetVolumeCapability().GetMount() != nil {
 		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
 	}
 
-	// Keep a record of the requested access types.
 	var accessTypeMount, accessTypeBlock bool
 
-	lvmType := req.GetVolumeContext()["type"]
-	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
-		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %2", lvmType)
-	}
+	ephemeralVolume := req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "true" ||
+		req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "" && ns.ephemeral // Kubernetes 1.15 doesn't have csi.storage.k8s.io/ephemeral.
 
 	cap := req.GetVolumeCapability()
 
@@ -118,35 +112,44 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
 	}
 
-	var requestedAccessType accessType
-
-	if accessTypeBlock {
-		requestedAccessType = blockAccess
-	} else {
-		// Default to mount.
-		requestedAccessType = mountAccess
-	}
-
 	// Check for maximum available capacity
 	volumeID := req.GetVolumeId()
 
-	capacityBytes, err := strconv.Atoi(req.GetVolumeContext()["RequiredBytes"])
-
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", volumeID, err)
-	}
-	capacity := int64(capacityBytes)
-
-	if capacity >= maxStorageCapacity {
-		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
-	}
+	// TODO
+	// impelment ephemeral, either by creation of a provisioner pod (though not needed, since this runs on the node already)
+	// or directly  by a exported func
 
 	// if ephemeral is specified, create volume here to avoid errors
 	if ephemeralVolume {
+		capacityBytes, err := strconv.Atoi(req.GetVolumeContext()["RequiredBytes"])
+
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", volumeID, err)
+		}
+		capacity := int64(capacityBytes)
+
+		if capacity >= maxStorageCapacity {
+			return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
+		}
+
+		lvmType := req.GetVolumeContext()["type"]
+		if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
+			return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %2", lvmType)
+		}
+
+		var requestedAccessType accessType
+
+		if accessTypeBlock {
+			requestedAccessType = blockAccess
+		} else {
+			// Default to mount.
+			requestedAccessType = mountAccess
+		}
+
 		volID := req.GetVolumeId()
 
 		val := req.GetVolumeContext()["size"]
-		glog.V(4).Infof("size: created volume: %s", val)
+		klog.V(4).Infof("size: created volume: %s", val)
 		if val == "" {
 			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("ephemeral inline volume is missing size parameter"))
 		}
@@ -155,10 +158,9 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("failed to parse size(%s) of ephemeral inline volume: %s", val, err.Error()))
 		}
 
-		// Todo: ephemeral
-		glog.V(4).Infof("TODO: ephemeral mode: created volume: %s, %s, %s", volID, size, requestedAccessType)
+		klog.V(4).Infof("TODO: ephemeral mode: created volume: %s, %s, %s", volID, size, requestedAccessType)
 
-		glog.V(4).Infof("ephemeral mode: created volume: %s", volID)
+		klog.V(4).Infof("ephemeral mode: created volume: %s", volID)
 	}
 
 	if req.GetVolumeCapability().GetBlock() != nil {
@@ -167,7 +169,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		if err != nil {
 			return nil, fmt.Errorf("unable to bind mount lv: %v output:%s", err, output)
 		}
-		klog.Infof("block lv %s size:%d vg:%s devices:%s created", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, lvmType, targetPath)
+		klog.Infof("block lv %s size:%d vg:%s devices:%s created", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
 
@@ -175,7 +177,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %v output:%s", err, output)
 		}
-		klog.Infof("mounted lv %s size:%d vg:%s devices:%s created", req.GetVolumeId(), req.VolumeCapability, ns.vgName, ns.devicesPattern, lvmType, targetPath)
+		klog.Infof("mounted lv %s size:%d vg:%s devices:%s created", req.GetVolumeId(), req.VolumeCapability, ns.vgName, ns.devicesPattern, targetPath)
 
 	}
 
@@ -183,6 +185,9 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 }
 
 func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+
+	// TODO
+	// implement deletion of ephemeral volumes
 
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
@@ -231,7 +236,7 @@ func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 
 	topology := &csi.Topology{
-		Segments: map[string]string{TopologyKeyNode: ns.nodeID},
+		Segments: map[string]string{topologyKeyNode: ns.nodeID},
 	}
 
 	return &csi.NodeGetInfoResponse{
@@ -267,7 +272,6 @@ func (ns *nodeServer) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVol
 	return nil, status.Error(codes.Unimplemented, "")
 }
 
-// NodeExpandVolume is only implemented so the driver can be used for e2e testing.
 func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
