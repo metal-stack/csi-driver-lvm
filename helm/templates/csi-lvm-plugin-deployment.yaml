@@ -1,0 +1,170 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: csi-driver-lvm
+  labels:
+    app: csi-driver-lvm
+    chart: csi-driver-lvm
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  selector:
+    matchLabels:
+      app: csi-driver-lvm
+  template:
+    metadata:
+      labels:
+        app: csi-driver-lvm
+        chart: csi-driver-lvm
+        heritage: {{ .Release.Service }}
+        release: {{ .Release.Name }}
+        kind: daemonset
+    spec:
+      serviceAccount: csi-lvmplugin
+      serviceAccountName: csi-lvmplugin
+      containers:
+      - name: csi-nodedriver-registrar
+        image: "{{ .Values.csiNodeDriverRegistrar.repository }}:{{ .Values.csiNodeDriverRegistrar.tag }}"
+        imagePullPolicy: {{ .Values.csiNodeDriverRegistrar.pullPolicy }}
+        args:
+          - "--v=5"
+          - "--csi-address=$(ADDRESS)"        
+          - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-lvm/csi.sock"
+        securityContext:
+          privileged: true
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - rm -rf /registration/csi-lvm /registration/csi-lvm-reg.sock
+        env:
+          - name: KUBE_NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /registration
+          name: registration-dir
+        - mountPath: /csi-data-dir
+          name: csi-data-dir
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.pluginImage.repository }}:{{ .Values.pluginImage.tag }}"
+        imagePullPolicy: {{ .Values.pluginImage.pullPolicy }}
+        args:
+        - --drivername=lvm.csi.k8s.io
+        - --v=5
+        - --endpoint=$(CSI_ENDPOINT)
+        - --devices=$(CSI_DEVICESPATTERN)
+        - --nodeid=$(KUBE_NODE_NAME)
+        - --vgname=$(CSI_VGNAME)
+        - --namespace=$(CSI_NAMESPACE)
+        - --provisionerimage=$(CSI_PROVISIONER_IMAGE)
+        - --pullpolicy=$(CSI_PULL_POILICY)
+        env:
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi.sock
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: CSI_DEVICESPATTERN
+          value: {{ .Values.lvm.devicePattern }}
+        - name: CSI_VGNAME
+          value: {{ .Values.lvm.vgName }}
+
+        - name: CSI_NAMESPACE
+          value: {{ .Values.namespace }}
+        - name: CSI_PROVISIONER_IMAGE
+          value: "{{ .Values.provisionerImage.repository }}:{{ .Values.provisionerImage.tag }}"
+        - name: CSI_PULL_POILICY
+          value: {{ .Values.provisionerImage.pullPolicy }}
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: healthz
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 2
+          successThreshold: 1
+          timeoutSeconds: 3
+        ports:
+        - containerPort: 9898
+          name: healthz
+          protocol: TCP
+        resources: {}
+        securityContext:
+          privileged: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/lib/kubelet/pods
+          mountPropagation: Bidirectional
+          name: mountpoint-dir
+        - mountPath: /var/lib/kubelet/plugins
+          mountPropagation: Bidirectional
+          name: plugins-dir
+        - mountPath: /csi-data-dir
+          name: csi-data-dir
+        - mountPath: /dev
+          name: dev-dir
+        - mountPath: /lib/modules
+          name: mod-dir
+      - args:
+        - --csi-address=/csi/csi.sock
+        - --health-port=9898
+        image: quay.io/k8scsi/livenessprobe:v1.1.0
+        imagePullPolicy: IfNotPresent
+        name: liveness-probe
+        resources:
+{{ toYaml .Values.resources | indent 12 }}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /var/lib/kubelet/plugins/csi-lvm
+          type: DirectoryOrCreate
+        name: socket-dir
+      - hostPath:
+          path: /var/lib/kubelet/pods
+          type: DirectoryOrCreate
+        name: mountpoint-dir
+      - hostPath:
+          path: /var/lib/kubelet/plugins_registry
+          type: Directory
+        name: registration-dir
+      - hostPath:
+          path: /var/lib/kubelet/plugins
+          type: Directory
+        name: plugins-dir
+      - hostPath:
+          path: /var/lib/csi-lvm-data/
+          type: DirectoryOrCreate
+        name: csi-data-dir
+      - hostPath:
+          path: /dev
+          type: Directory
+        name: dev-dir
+      - hostPath:
+          path: /lib/modules
+          type: Directory
+        name: mod-dir
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 1
+    type: RollingUpdate

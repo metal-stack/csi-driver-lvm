@@ -19,9 +19,10 @@ package lvm
 import (
 	"fmt"
 	"os/exec"
-	"strconv"
+	"strings"
 
 	"github.com/docker/go-units"
+	"github.com/google/lvmd/commands"
 	"golang.org/x/net/context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -43,16 +44,11 @@ type nodeServer struct {
 func newNodeServer(nodeID string, ephemeral bool, maxVolumesPerNode int64, devicesPattern string, vgName string) *nodeServer {
 
 	// revive existing volumes at start of node server
-	vgexists := VgExists(vgName)
+	vgexists := vgExists(vgName)
 	if !vgexists {
 		klog.Infof("volumegroup: %s not found\n", vgName)
-		VgActivate(vgName)
+		vgActivate(vgName)
 		// now check again for existing vg again
-		vgexists = VgExists(vgName)
-		if !vgexists {
-			klog.Infof("volumegroup: %s not found\n", vgName)
-			return nil
-		}
 	}
 	cmd := exec.Command("lvchange", "-ay", vgName)
 	out, err := cmd.CombinedOutput()
@@ -90,10 +86,6 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 
 	var accessTypeMount, accessTypeBlock bool
-
-	ephemeralVolume := req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "true" ||
-		req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "" && ns.ephemeral // Kubernetes 1.15 doesn't have csi.storage.k8s.io/ephemeral.
-
 	cap := req.GetVolumeCapability()
 
 	if cap.GetBlock() != nil {
@@ -108,41 +100,13 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
 	}
 
-	// TODO
-	// impelment ephemeral, either by creation of a provisioner pod (though not needed, since this runs on the node already)
-	// or directly by a shared, exported func
+	ephemeralVolume := req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "true" ||
+		req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "" && ns.ephemeral // Kubernetes 1.15 doesn't have csi.storage.k8s.io/ephemeral.
 
-	// if ephemeral is specified, create volume here to avoid errors
+	// if ephemeral is specified, create volume here
 	if ephemeralVolume {
-		capacityBytes, err := strconv.Atoi(req.GetVolumeContext()["RequiredBytes"])
-
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to create volume %v: %v", req.GetVolumeId(), err)
-		}
-		capacity := int64(capacityBytes)
-
-		if capacity >= maxStorageCapacity {
-			return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
-		}
-
-		lvmType := req.GetVolumeContext()["type"]
-		if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
-			return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %2", lvmType)
-		}
-
-		var requestedAccessType accessType
-
-		if accessTypeBlock {
-			requestedAccessType = blockAccess
-		} else {
-			// Default to mount.
-			requestedAccessType = mountAccess
-		}
-
-		volID := req.GetVolumeId()
 
 		val := req.GetVolumeContext()["size"]
-		klog.V(4).Infof("size: created volume: %s", val)
 		if val == "" {
 			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("ephemeral inline volume is missing size parameter"))
 		}
@@ -151,9 +115,14 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("failed to parse size(%s) of ephemeral inline volume: %s", val, err.Error()))
 		}
 
-		klog.V(4).Infof("TODO: ephemeral mode: created volume: %s, %s, %s", volID, size, requestedAccessType)
+		volID := req.GetVolumeId()
 
-		klog.V(4).Infof("ephemeral mode: created volume: %s", volID)
+		output, err := CreateLVS(context.Background(), ns.vgName, volID, uint64(size), req.GetVolumeContext()["type"])
+		if err != nil {
+			return nil, fmt.Errorf("unable to create lv: %v output:%s", err, output)
+		}
+
+		klog.V(4).Infof("ephemeral mode: created volume: %s, size: %s", volID, size)
 	}
 
 	if req.GetVolumeCapability().GetBlock() != nil {
@@ -181,19 +150,33 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 
 	// TODO
 	// implement deletion of ephemeral volumes
+	volID := req.GetVolumeId()
 
+	klog.Infof("NodeUnpublishRequest: %s", req)
 	// Check arguments
-	if len(req.GetVolumeId()) == 0 {
+	if len(volID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
 	}
 	if len(req.GetTargetPath()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
-	output, err := umountLV(req.GetVolumeId(), ns.vgName)
+	output, err := umountLV(volID, ns.vgName)
 	if err != nil {
-		return nil, fmt.Errorf("unable to delete lv: %v output:%s", err, output)
+		return nil, fmt.Errorf("unable to umount lv: %v output:%s", err, output)
 	}
+
+	// ephemeral volumes start with "csi-"
+	if strings.HasPrefix(volID, "csi-") {
+		// remove ephemeral volume here
+		output, err := commands.RemoveLV(context.Background(), ns.vgName, volID)
+		if err != nil {
+			return nil, fmt.Errorf("unable to delete lv: %v output:%s", err, output)
+		}
+		klog.Infof("lv %s vg:%s deleted", volID, ns.vgName)
+
+	}
+
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
@@ -266,5 +249,29 @@ func (ns *nodeServer) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVol
 }
 
 func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+
+	// Check arguments
+	if req.GetCapacityRange() == nil {
+		return nil, status.Error(codes.InvalidArgument, "Volume capability missing in request")
+	}
+	if len(req.GetVolumeId()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+	}
+	capacity := int64(req.GetCapacityRange().GetRequiredBytes())
+	if capacity >= maxStorageCapacity {
+		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
+	}
+
+	volID := req.GetVolumeId()
+	output, err := extendLVS(context.Background(), ns.vgName, volID, uint64(capacity))
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to umount lv: %v output:%s", err, output)
+
+	}
+
+	return &csi.NodeExpandVolumeResponse{
+		CapacityBytes: capacity,
+	}, nil
+
 }

@@ -120,7 +120,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	}
 
 	// TODO
-	// check remaining size of disk for maxStorageCapacity
+	// this check must bei implemented in createlvs executed by the provisioner pod on the node
 
 	// Check for maximum available capacity
 	capacity := int64(req.GetCapacityRange().GetRequiredBytes())

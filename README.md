@@ -1,13 +1,10 @@
 
 # DO NOT USE FOR PRODUCTION #
 
-## This is a barely working copy-paste-hack-job, based on csi-driver-hostpath with working content of csi-lvm.
-### Currently it can mount and unmount block and filesystem volumes via lvm.
+### Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm.
 
 ### Todo:
-* implement NodeExpandVolume(), ControllerExpandVolume()
 * implement CreateSnapshot(), ListSnapshots(), DeleteSnapshot()
-* migrate deploy-lvm.sh into a helm chart 
 
 ### Development
 
@@ -40,13 +37,12 @@ docker build
 docker push
 ```
 
-Replace mwennrich/lvmplugin:latest image in deploy/kubernetes-1.17/lvm/csi-lvm-plugin.yaml
+Replace mwennrich/lvmplugin:latest image in helm/values.yaml
 
 
 #### Deploy:
 ```
-./deploy/kubernetes-1.17/deploy-lvm.sh
-kubectl apply -f examples/csi-storageclass.yaml
+helm install mytest helm
 ```
 
 #### Test:

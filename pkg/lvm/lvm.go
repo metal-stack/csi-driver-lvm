@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -364,7 +366,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 }
 
 // VgExists checks if the given volume group exists
-func VgExists(name string) bool {
+func vgExists(name string) bool {
 	vgs, err := commands.ListVG(context.Background())
 	if err != nil {
 		klog.Infof("unable to list existing volumegroups:%v", err)
@@ -381,7 +383,7 @@ func VgExists(name string) bool {
 }
 
 // VgActivate execute vgchange -ay to activate all volumes of the volume group
-func VgActivate(name string) {
+func vgActivate(name string) {
 	// scan for vgs and activate if any
 	cmd := exec.Command("vgscan")
 	out, err := cmd.CombinedOutput()
@@ -393,4 +395,147 @@ func VgActivate(name string) {
 	if err != nil {
 		klog.Infof("unable to activate volumegroups:%s %v", out, err)
 	}
+}
+
+func devices(devicesPattern []string) (devices []string, err error) {
+	for _, devicePattern := range devicesPattern {
+		klog.Infof("search devices :%s ", devicePattern)
+		matches, err := filepath.Glob(devicePattern)
+		if err != nil {
+			return nil, err
+		}
+		klog.Infof("found: %s", matches)
+		devices = append(devices, matches...)
+	}
+	return devices, nil
+}
+
+// CreateVG creates a volume group matching the given device patterns
+func CreateVG(name string, devicesPattern []string) (string, error) {
+	vgexists := vgExists(name)
+	if vgexists {
+		klog.Infof("volumegroup: %s already exists\n", name)
+		return name, nil
+	}
+	vgActivate(name)
+	// now check again for existing vg again
+	vgexists = vgExists(name)
+	if vgexists {
+		klog.Infof("volumegroup: %s already exists\n", name)
+		return name, nil
+	}
+
+	physicalVolumes, err := devices(devicesPattern)
+	if err != nil {
+		return "", fmt.Errorf("unable to lookup devices from devicesPattern %s, err:%v", devicesPattern, err)
+	}
+	tags := []string{"vg.metal-stack.io/csi-lvm"}
+
+	args := []string{"-v", name}
+	args = append(args, physicalVolumes...)
+	for _, tag := range tags {
+		args = append(args, "--add-tag", tag)
+	}
+	klog.Infof("create vg with command: vgcreate %v", args)
+	cmd := exec.Command("vgcreate", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// CreateLVS creates the new volume
+// used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
+func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType string) (string, error) {
+
+	if lvExists(vg, name) {
+		klog.Infof("logicalvolume: %s already exists\n", name)
+		return name, nil
+	}
+
+	if size == 0 {
+		return "", fmt.Errorf("size must be greater than 0")
+	}
+
+	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
+		return "", fmt.Errorf("lvmType is incorrect: %s", lvmType)
+	}
+
+	// TODO: check available capacity, fail if request doesn't fit
+
+	args := []string{"-v", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
+
+	pvs, err := pvCount(vg)
+	if err != nil {
+		return "", fmt.Errorf("unable to determine pv count of vg: %v", err)
+	}
+
+	if pvs < 2 {
+		klog.Warning("pvcount is <2 only linear is supported")
+		lvmType = linearType
+	}
+
+	switch lvmType {
+	case stripedType:
+		args = append(args, "--type", "striped", "--stripes", fmt.Sprintf("%d", pvs))
+	case mirrorType:
+		args = append(args, "--type", "raid1", "--mirrors", "1", "--nosync")
+	case linearType:
+	default:
+		return "", fmt.Errorf("unsupported lvmtype: %s", lvmType)
+	}
+
+	tags := []string{"lv.metal-stack.io/csi-lvm"}
+	for _, tag := range tags {
+		args = append(args, "--add-tag", tag)
+	}
+	args = append(args, vg)
+	klog.Infof("lvreate %s", args)
+	cmd := exec.Command("lvcreate", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func lvExists(vg string, name string) bool {
+	lvs, err := commands.ListLV(context.Background(), vg+"/"+name)
+	if err != nil {
+		klog.Infof("unable to list existing logicalvolumes:%v", err)
+	}
+
+	for _, lv := range lvs {
+		klog.Infof("compare lv:%s with:%s\n", lv.Name, name)
+		if strings.Contains(lv.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func extendLVS(ctx context.Context, vg string, name string, size uint64) (string, error) {
+
+	if !lvExists(vg, name) {
+		return "", fmt.Errorf("logical volume %s does not exist", name)
+	}
+
+	// TODO: check available capacity, fail if request doesn't fit
+
+	args := []string{"-L", fmt.Sprintf("%db", size), "-r"}
+
+	args = append(args, fmt.Sprintf("%s/%s", vg, name))
+	klog.Infof("lvextend %s", args)
+	cmd := exec.Command("lvextend", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func pvCount(vgname string) (int, error) {
+	cmd := exec.Command("vgs", vgname, "--noheadings", "-o", "pv_count")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, err
+	}
+	outStr := strings.TrimSpace(string(out))
+	count, err := strconv.Atoi(outStr)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
