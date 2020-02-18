@@ -1,37 +1,47 @@
-kind: DaemonSet
-apiVersion: apps/v1
+kind: Service
+apiVersion: v1
 metadata:
-  name: csi-driver-lvm
+  name: csi-lvmplugin
   labels:
-    app: csi-driver-lvm
-    chart: csi-driver-lvm
+    app: csi-lvmplugin
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
 spec:
   selector:
+    app: csi-lvmplugin
+  ports:
+    - name: dummy
+      port: 12345
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: csi-lvmplugin
+spec:
+  revisionHistoryLimit: 10
+  selector:
     matchLabels:
-      app: csi-driver-lvm
+      app: csi-lvmplugin
   template:
     metadata:
+      creationTimestamp: null
       labels:
-        app: csi-driver-lvm
-        chart: csi-driver-lvm
-        heritage: {{ .Release.Service }}
-        release: {{ .Release.Name }}
-        kind: daemonset
+        app: csi-lvmplugin
     spec:
-      serviceAccount: csi-lvmplugin
       serviceAccountName: csi-lvmplugin
       containers:
-      - name: csi-nodedriver-registrar
-        image: "{{ .Values.csiNodeDriverRegistrar.repository }}:{{ .Values.csiNodeDriverRegistrar.tag }}"
-        imagePullPolicy: {{ .Values.csiNodeDriverRegistrar.pullPolicy }}
-        args:
-          - "--v=5"
-          - "--csi-address=$(ADDRESS)"        
-          - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi-lvm/csi.sock"
-        securityContext:
-          privileged: true
+      - args:
+        - --v=5
+        - --csi-address=/csi/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/csi-lvm/csi.sock
+        env:
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: quay.io/k8scsi/csi-node-driver-registrar:v1.2.0
+        imagePullPolicy: IfNotPresent
         lifecycle:
           preStop:
             exec:
@@ -39,11 +49,12 @@ spec:
               - /bin/sh
               - -c
               - rm -rf /registration/csi-lvm /registration/csi-lvm-reg.sock
-        env:
-          - name: KUBE_NODE_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: spec.nodeName
+        name: node-driver-registrar
+        resources: {}
+        securityContext:
+          privileged: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
         volumeMounts:
         - mountPath: /csi
           name: socket-dir
@@ -51,10 +62,7 @@ spec:
           name: registration-dir
         - mountPath: /csi-data-dir
           name: csi-data-dir
-      - name: {{ .Chart.Name }}
-        image: "{{ .Values.pluginImage.repository }}:{{ .Values.pluginImage.tag }}"
-        imagePullPolicy: {{ .Values.pluginImage.pullPolicy }}
-        args:
+      - args:
         - --drivername=lvm.csi.k8s.io
         - --v=5
         - --endpoint=$(CSI_ENDPOINT)
@@ -76,13 +84,14 @@ spec:
           value: {{ .Values.lvm.devicePattern }}
         - name: CSI_VGNAME
           value: {{ .Values.lvm.vgName }}
-
         - name: CSI_NAMESPACE
-          value: {{ .Values.namespace }}
+          value: {{ .Release.Namespace }}
         - name: CSI_PROVISIONER_IMAGE
           value: "{{ .Values.provisionerImage.repository }}:{{ .Values.provisionerImage.tag }}"
-        - name: CSI_PULL_POILICY
+        - name: CSI_PULL_POLICY
           value: {{ .Values.provisionerImage.pullPolicy }}
+        image: "{{ .Values.pluginImage.repository }}:{{ .Values.pluginImage.tag }}"
+        imagePullPolicy: {{ .Values.pluginImage.pullPolicy }}
         livenessProbe:
           failureThreshold: 5
           httpGet:
@@ -93,6 +102,7 @@ spec:
           periodSeconds: 2
           successThreshold: 1
           timeoutSeconds: 3
+        name: lvm
         ports:
         - containerPort: 9898
           name: healthz
@@ -123,8 +133,7 @@ spec:
         image: quay.io/k8scsi/livenessprobe:v1.1.0
         imagePullPolicy: IfNotPresent
         name: liveness-probe
-        resources:
-{{ toYaml .Values.resources | indent 12 }}
+        resources: {}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
@@ -164,7 +173,3 @@ spec:
           path: /lib/modules
           type: Directory
         name: mod-dir
-  updateStrategy:
-    rollingUpdate:
-      maxUnavailable: 1
-    type: RollingUpdate

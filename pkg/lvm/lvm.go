@@ -77,7 +77,6 @@ type volumeAction struct {
 	nodeName         string
 	size             int64
 	lvmType          string
-	isBlock          bool
 	devicesPattern   string
 	provisionerImage string
 	pullPolicy       v1.PullPolicy
@@ -253,9 +252,6 @@ func createProvisionerPod(va volumeAction) (err error) {
 		args = append(args, "deletelv")
 	}
 	args = append(args, "--lvname", va.name, "--vgname", "csi-lvm")
-	if va.isBlock {
-		args = append(args, "--block")
-	}
 
 	klog.Infof("start provisionerPod with args:%s", args)
 	hostPathType := v1.HostPathDirectoryOrCreate

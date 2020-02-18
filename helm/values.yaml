@@ -1,6 +1,5 @@
 
 lvm:
-  name: lvmplugin
   devicePattern: /dev/nvme[0-9]n[0-9]
   vgName: csi-lvm
 
@@ -13,26 +12,6 @@ provisionerImage:
   repository: mwennrich/csi-lvmplugin-provisioner
   tag: latest
   pullPolicy: Always
-
-csiNodeDriverRegistrar:
-  repository: quay.io/k8scsi/csi-node-driver-registrar
-  tag: v1.2.0
-  pullPolicy: IfNotPresent
-
-csiExternalProvisioner:
-  repository: quay.io/k8scsi/csi-provisioner
-  tag: canary
-  pullPolicy: IfNotP
-
-csiExternalAttacher:
-  repository: quay.io/k8scsi/csi-attacher
-  tag: v2.1.0
-  pullPolicy: IfNotPresent
-
-csiExternalResizer:
-  repository: quay.io/k8scsi/csi-resizer
-  tag: v0.4.0
-  pullPolicy: IfNotPresent
 
 rbac:
   create: true

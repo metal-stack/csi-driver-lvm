@@ -163,7 +163,6 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		nodeName:         node,
 		size:             req.GetCapacityRange().GetRequiredBytes(),
 		lvmType:          lvmType,
-		isBlock:          accessTypeBlock,
 		devicesPattern:   cs.devicesPattern,
 		pullPolicy:       cs.pullPolicy,
 		provisionerImage: cs.provisionerImage,

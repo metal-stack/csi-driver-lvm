@@ -8,8 +8,11 @@
 
 ### Development
 
-TL;DR: ./start.sh (./start-with-psp.sh for minikube with podSecurityPolicy enabled)
-
+TL;DR:
+```
+./start.sh
+helm install mytest helm --set lvm.devicePattern='/dev/loop[0-1]'
+```
 
 #### Start minikube and create dummy volumes:
 ```
