@@ -50,7 +50,7 @@ tests: lvmplugin
 	@minikube delete
 
 .PHONY: cijob
-cijob:
+cijob: lvmplugin
 	./tests/files/start-minikube-on-github.sh
 	kubectl config view --flatten --minify > tests/files/.kubeconfig
 	docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile
