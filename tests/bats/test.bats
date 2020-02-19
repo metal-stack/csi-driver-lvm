@@ -1,7 +1,7 @@
 #!/usr/bin/env bats -p
 
 @test "deploy csi-lvm-controller" {
-    run helm install mytest --set lvm.devicePattern='/dev/loop[0-1]' --set pluginImage.pullPolicy=IfNotPresent --set provisionerImage.pullPolicy=IfNotPresent /files/helm
+    run helm install mytest --set lvm.devicePattern='/dev/loop[0-1]' --set pluginImage.pullPolicy=IfNotPresent --set provisionerImage.pullPolicy=IfNotPresent --wait /files/helm
     [ "$status" -eq 0 ]
 }
 
@@ -38,7 +38,7 @@
 }
 
 @test "debug csi-lvm" {
-    run timeout 3 stern -n csi-lvm .
+    run timeout 3 stern .
     echo "output = ${output}"
     [ "$status" -eq 0 ]
 }

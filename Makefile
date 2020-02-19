@@ -53,6 +53,7 @@ tests: lvmplugin
 cijob: lvmplugin
 	./tests/files/start-minikube-on-github.sh
 	kubectl config view --flatten --minify > tests/files/.kubeconfig
+	@cp -R helm tests/files
 	docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile
 	docker build -t mwennrich/lvmplugin:latest .
 	docker build -t csi-lvm-tests tests > /dev/null
