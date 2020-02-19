@@ -231,7 +231,7 @@ func umountLV(lvName string, vgName string) (string, error) {
 	cmd := exec.Command("umount", "--lazy", "--force", lvPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Errorf("unable to umount %s from %s output:%s err:%v", lvPath, string(out), err)
+		klog.Errorf("unable to umount %s output:%s err:%v", lvPath, string(out), err)
 	}
 	return "", nil
 }

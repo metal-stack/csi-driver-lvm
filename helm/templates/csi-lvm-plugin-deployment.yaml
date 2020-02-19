@@ -64,7 +64,6 @@ spec:
           name: csi-data-dir
       - args:
         - --drivername=lvm.csi.k8s.io
-        - --v=5
         - --endpoint=$(CSI_ENDPOINT)
         - --devices=$(CSI_DEVICESPATTERN)
         - --nodeid=$(KUBE_NODE_NAME)

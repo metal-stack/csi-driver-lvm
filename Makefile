@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-CMDS=lvmplugin
-all: build
+all: provisioner lvmplugin
 
-include release-tools/build.make
+.PHONY: lvmplugin
+lvmplugin:
+	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o ./bin/lvmplugin ./cmd/lvmplugin
 
 .PHONY: provisioner
 provisioner:
