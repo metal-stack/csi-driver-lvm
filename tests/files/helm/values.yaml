@@ -1,0 +1,18 @@
+
+lvm:
+  devicePattern: /dev/nvme[0-9]n[0-9]
+  vgName: csi-lvm
+
+pluginImage:
+  repository: mwennrich/lvmplugin
+  tag: latest
+  pullPolicy: Always
+
+provisionerImage:
+  repository: mwennrich/csi-lvmplugin-provisioner
+  tag: latest
+  pullPolicy: Always
+
+rbac:
+  create: true
+  pspEnabled: true
