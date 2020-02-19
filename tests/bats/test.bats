@@ -31,6 +31,18 @@
     [ "$output" = "lvm-pvc-linear,Bound" ]
 }
 
+@test "debug events" {
+    run kubectl get events -A
+    echo "output = ${output}"
+    [ "$status" -eq 1 ]
+}
+
+@test "debug csi-lvm" {
+    run timeout 3 stern -n csi-lvm .
+    echo "output = ${output}"
+    [ "$status" -eq 0 ]
+}
+
 @test "linear pod running" {
     run kubectl get pods volume-test -o jsonpath="{.metadata.name},{.status.phase}"
     [ "$status" -eq 0 ]
