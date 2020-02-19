@@ -13,9 +13,7 @@
 # limitations under the License.
 
 CMDS=lvmplugin
-all: build
-
-include release-tools/build.make
+all: provisioner
 
 .PHONY: provisioner
 provisioner:

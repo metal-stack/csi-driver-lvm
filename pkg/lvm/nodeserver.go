@@ -122,7 +122,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			return nil, fmt.Errorf("unable to create lv: %v output:%s", err, output)
 		}
 
-		klog.V(4).Infof("ephemeral mode: created volume: %s, size: %s", volID, size)
+		klog.V(4).Infof("ephemeral mode: created volume: %s, size: %d", volID, size)
 	}
 
 	if req.GetVolumeCapability().GetBlock() != nil {
@@ -131,7 +131,8 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		if err != nil {
 			return nil, fmt.Errorf("unable to bind mount lv: %v output:%s", err, output)
 		}
-		klog.Infof("block lv %s size:%d vg:%s devices:%s created", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
+		// FIXME: VolumeCapability is a struct and not the size
+		klog.Infof("block lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
 
@@ -139,7 +140,8 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %v output:%s", err, output)
 		}
-		klog.Infof("mounted lv %s size:%d vg:%s devices:%s created", req.GetVolumeId(), req.VolumeCapability, ns.vgName, ns.devicesPattern, targetPath)
+		// FIXME: VolumeCapability is a struct and not the size
+		klog.Infof("mounted lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
 
 	}
 

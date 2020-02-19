@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path"
 
@@ -26,7 +27,10 @@ import (
 )
 
 func init() {
-	flag.Set("logtostderr", "true")
+	err := flag.Set("logtostderr", "true")
+	if err != nil {
+		log.Printf("unable to configure logging to stdout:%v\n", err)
+	}
 }
 
 var (
