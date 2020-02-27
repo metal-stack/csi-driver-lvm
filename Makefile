@@ -59,4 +59,3 @@ cijob: lvmplugin
 	docker build -t csi-lvm-tests tests > /dev/null
 	docker run --rm csi-lvm-tests bats /bats
 
-
