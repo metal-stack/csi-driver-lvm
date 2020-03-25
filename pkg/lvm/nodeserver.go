@@ -18,6 +18,7 @@ package lvm
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -163,7 +164,7 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
-	output, err := umountLV(volID, ns.vgName)
+	output, err := umountLV(req.GetTargetPath())
 	if err != nil {
 		return nil, fmt.Errorf("unable to umount lv: %v output:%s", err, output)
 	}
@@ -265,7 +266,24 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 	}
 
 	volID := req.GetVolumeId()
-	output, err := extendLVS(context.Background(), ns.vgName, volID, uint64(capacity))
+	volPath := req.GetVolumePath()
+	if len(volPath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume path not provided")
+	}
+
+	info, err := os.Stat(volPath)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Could not get file information from %s: %v", volPath, err)
+	}
+
+	isBlock := false
+	m := info.Mode()
+	if !m.IsDir() {
+		klog.Warning("volume expand request on block device: filesystem resize has to be done externally")
+		isBlock = true
+	}
+
+	output, err := extendLVS(context.Background(), ns.vgName, volID, uint64(capacity), isBlock)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to umount lv: %v output:%s", err, output)

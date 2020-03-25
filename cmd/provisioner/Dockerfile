@@ -5,7 +5,7 @@ WORKDIR /work
 RUN make provisioner
 
 FROM alpine:3.11
-RUN apk add lvm2 e2fsprogs util-linux
+RUN apk add lvm2 lvm2-extra e2fsprogs e2fsprogs-extra smartmontools nvme-cli util-linux device-mapper
 COPY --from=builder /work/bin/csi-lvmplugin-provisioner /csi-lvmplugin-provisioner
 USER root
 ENTRYPOINT ["/csi-lvmplugin-provisioner"]

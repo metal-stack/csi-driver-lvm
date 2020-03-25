@@ -50,6 +50,26 @@
     [ "$output" = "volume-test-block,Running" ]
 }
 
+@test "resize volume requests" {
+    run kubectl apply -f /files/pvc-resize.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "persistentvolumeclaim/lvm-pvc-block configured" ]
+    [ "${lines[1]}" = "persistentvolumeclaim/lvm-pvc-linear configured" ]
+}
+
+@test "check new linear volume size" {
+    run sleep 90
+    run kubectl get pvc lvm-pvc-linear -o jsonpath='{.status.capacity.storage}'
+    [ "$status" -eq 0 ]
+    [ "$output" = "20Mi" ]
+}
+
+@test "check new block volume size" {
+    run kubectl get pvc lvm-pvc-block -o jsonpath='{.status.capacity.storage}'
+    [ "$status" -eq 0 ]
+    [ "$output" = "20Mi" ]
+}
+
 @test "delete linear pod" {
     run kubectl delete -f /files/linear.yaml
     [ "$status" -eq 0 ]
