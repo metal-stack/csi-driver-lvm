@@ -39,14 +39,9 @@ tests: lvmplugin
 	#@rm tests/files/.kubeconfig
 	#@minikube delete
 
-.PHONY: cijob
-cijob: lvmplugin
-	./tests/files/start-minikube-on-github.sh
-	kubectl config view --flatten --minify > tests/files/.kubeconfig
+.PHONY: metalci
+metalci: dockerimages dockerpush
 	@cp -R helm tests/files
-	docker pull nginx:stable-alpine
-	docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile
-	docker build -t mwennrich/lvmplugin:latest .
-	docker build -t csi-lvm-tests tests > /dev/null
+	docker build --build-arg docker_tag=${DOCKER_TAG} -t csi-lvm-tests tests > /dev/null
 	docker run --rm csi-lvm-tests bats /bats
 

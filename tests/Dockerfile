@@ -1,5 +1,8 @@
 FROM alpine
 
+ARG docker_tag
+ENV DOCKER_TAG=$docker_tag
+
 ENV KUBECONFIG /files/.kubeconfig
 
 RUN apk add --update ca-certificates \

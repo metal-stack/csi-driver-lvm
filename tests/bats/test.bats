@@ -1,7 +1,9 @@
 #!/usr/bin/env bats -p
 
 @test "deploy csi-lvm-controller" {
-    run helm install mytest --set lvm.devicePattern='/dev/loop[0-1]' --set pluginImage.pullPolicy=IfNotPresent --set provisionerImage.pullPolicy=IfNotPresent --wait /files/helm
+    run helm uninstall mytest
+    run sleep 10
+    run helm install mytest --wait /files/helm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG}
     [ "$status" -eq 0 ]
 }
 
@@ -29,18 +31,6 @@
     run kubectl get pvc lvm-pvc-linear -o jsonpath="{.metadata.name},{.status.phase}"
     [ "$status" -eq 0 ]
     [ "$output" = "lvm-pvc-linear,Bound" ]
-}
-
-@test "debug events" {
-    run kubectl get events -A
-    echo "output = ${output}"
-    [ "$status" -eq 1 ]
-}
-
-@test "debug csi-lvm" {
-    run timeout 5 stern -n default .
-    echo "output = ${output}"
-    [ "$status" -eq 0 ]
 }
 
 @test "linear pod running" {

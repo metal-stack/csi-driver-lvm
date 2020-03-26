@@ -256,7 +256,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 	hostPathType := v1.HostPathDirectoryOrCreate
 	privileged := true
 	mountPropagationBidirectional := v1.MountPropagationBidirectional
-	//MountPropagationHostToContainer := v1.MountPropagationHostToContainer
+	MountPropagationHostToContainer := v1.MountPropagationHostToContainer
 	provisionerPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: string(va.action) + "-" + va.name,
@@ -277,9 +277,10 @@ func createProvisionerPod(va volumeAction) (err error) {
 					Args:    args,
 					VolumeMounts: []v1.VolumeMount{
 						{
-							Name:      "devices",
-							ReadOnly:  false,
-							MountPath: "/dev",
+							Name:             "devices",
+							ReadOnly:         false,
+							MountPath:        "/dev",
+							MountPropagation: &MountPropagationHostToContainer,
 						},
 						{
 							Name:      "modules",
@@ -296,6 +297,12 @@ func createProvisionerPod(va volumeAction) (err error) {
 							Name:             "lvmcache",
 							ReadOnly:         false,
 							MountPath:        "/etc/lvm/cache",
+							MountPropagation: &mountPropagationBidirectional,
+						},
+						{
+							Name:             "lvmlock",
+							ReadOnly:         false,
+							MountPath:        "/run/lock/lvm",
 							MountPropagation: &mountPropagationBidirectional,
 						},
 					},
@@ -348,6 +355,15 @@ func createProvisionerPod(va volumeAction) (err error) {
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
 							Path: "/etc/lvm/cache",
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "lvmlock",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/run/lock/lvm",
 							Type: &hostPathType,
 						},
 					},

@@ -1,20 +1,15 @@
-name: Docker Image from pull request
-
-on:
-  push:
-    branches-ignore:
-    - master
+name: "CI job using metal"
+on: [pull_request]
 
 jobs:
- build:
-   runs-on: ubuntu-latest
-   steps:
-   - uses: actions/checkout@v1
-   - name: Branch name
-     run: echo running on branch ${GITHUB_REF##*/}
-   - name: Build the Docker images
-     run: |
-       export GITHUB_TAG_NAME=${GITHUB_REF##*/}
-       docker login -u mwennrich -p ${{ secrets.DOCKER_HUB_TOKEN }}
-       make dockerimages
-       make dockerpush
+  cijob:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - uses: olegtarasov/get-tag@v1
+      id: tagName
+    - name: Testing
+      run: |
+        docker login -u mwennrich -p ${{ secrets.DOCKER_HUB_TOKEN }}
+        echo "${{ secrets.DOCKER_HUB_TOKEN }}" >> tests/files/.kubeconfig
+        make metalci
