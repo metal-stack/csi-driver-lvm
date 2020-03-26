@@ -1,0 +1,16 @@
+name: "CI job using metal"
+on: [pull_request]
+
+jobs:
+  cijob:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Branch name
+      run: echo running on branch ${GITHUB_REF##*/}
+    - name: Testing
+      run: |
+        export GITHUB_TAG_NAME=pr-${GITHUB_HEAD_REF##*/}
+        docker login -u mwennrich -p ${{ secrets.DOCKER_HUB_TOKEN }}
+        echo "${{ secrets.KUBECONFIG }}" > tests/files/.kubeconfig
+        make metalci

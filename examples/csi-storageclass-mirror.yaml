@@ -5,7 +5,6 @@ metadata:
 provisioner: lvm.csi.k8s.io
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: false
+allowVolumeExpansion: true
 parameters:
   type: mirror
-

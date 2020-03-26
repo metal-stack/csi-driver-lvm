@@ -115,6 +115,7 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 
 	pp := v1.PullAlways
 	if strings.ToLower(pullPolicy) == pullIfNotPresent {
+		klog.Info("pullpolicy: IfNotPresent")
 		pp = v1.PullIfNotPresent
 	}
 
@@ -224,14 +225,12 @@ func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
 	return "", nil
 }
 
-func umountLV(lvName string, vgName string) (string, error) {
+func umountLV(targetPath string) (string, error) {
 
-	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvName)
-
-	cmd := exec.Command("umount", "--lazy", "--force", lvPath)
+	cmd := exec.Command("umount", "--lazy", "--force", targetPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Errorf("unable to umount %s output:%s err:%v", lvPath, string(out), err)
+		klog.Errorf("unable to umount %s output:%s err:%v", targetPath, string(out), err)
 	}
 	return "", nil
 }
@@ -256,6 +255,8 @@ func createProvisionerPod(va volumeAction) (err error) {
 	klog.Infof("start provisionerPod with args:%s", args)
 	hostPathType := v1.HostPathDirectoryOrCreate
 	privileged := true
+	mountPropagationBidirectional := v1.MountPropagationBidirectional
+	MountPropagationHostToContainer := v1.MountPropagationHostToContainer
 	provisionerPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: string(va.action) + "-" + va.name,
@@ -276,14 +277,33 @@ func createProvisionerPod(va volumeAction) (err error) {
 					Args:    args,
 					VolumeMounts: []v1.VolumeMount{
 						{
-							Name:      "devices",
-							ReadOnly:  false,
-							MountPath: "/dev",
+							Name:             "devices",
+							ReadOnly:         false,
+							MountPath:        "/dev",
+							MountPropagation: &MountPropagationHostToContainer,
 						},
 						{
 							Name:      "modules",
 							ReadOnly:  false,
 							MountPath: "/lib/modules",
+						},
+						{
+							Name:             "lvmbackup",
+							ReadOnly:         false,
+							MountPath:        "/etc/lvm/backup",
+							MountPropagation: &mountPropagationBidirectional,
+						},
+						{
+							Name:             "lvmcache",
+							ReadOnly:         false,
+							MountPath:        "/etc/lvm/cache",
+							MountPropagation: &mountPropagationBidirectional,
+						},
+						{
+							Name:             "lvmlock",
+							ReadOnly:         false,
+							MountPath:        "/run/lock/lvm",
+							MountPropagation: &mountPropagationBidirectional,
 						},
 					},
 					ImagePullPolicy: va.pullPolicy,
@@ -317,6 +337,33 @@ func createProvisionerPod(va volumeAction) (err error) {
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
 							Path: "/lib/modules",
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "lvmbackup",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/etc/lvm/backup",
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "lvmcache",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/etc/lvm/cache",
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "lvmlock",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/run/lock/lvm",
 							Type: &hostPathType,
 						},
 					},
@@ -425,7 +472,7 @@ func CreateVG(name string, devicesPattern []string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("unable to lookup devices from devicesPattern %s, err:%v", devicesPattern, err)
 	}
-	tags := []string{"vg.metal-stack.io/csi-lvm"}
+	tags := []string{"vg.metal-stack.io/csi-lvm-driver"}
 
 	args := []string{"-v", name}
 	args = append(args, physicalVolumes...)
@@ -479,7 +526,7 @@ func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 		return "", fmt.Errorf("unsupported lvmtype: %s", lvmType)
 	}
 
-	tags := []string{"lv.metal-stack.io/csi-lvm"}
+	tags := []string{"lv.metal-stack.io/csi-lvm-driver"}
 	for _, tag := range tags {
 		args = append(args, "--add-tag", tag)
 	}
@@ -505,7 +552,7 @@ func lvExists(vg string, name string) bool {
 	return false
 }
 
-func extendLVS(ctx context.Context, vg string, name string, size uint64) (string, error) {
+func extendLVS(ctx context.Context, vg string, name string, size uint64, isBlock bool) (string, error) {
 
 	if !lvExists(vg, name) {
 		return "", fmt.Errorf("logical volume %s does not exist", name)
@@ -513,8 +560,12 @@ func extendLVS(ctx context.Context, vg string, name string, size uint64) (string
 
 	// TODO: check available capacity, fail if request doesn't fit
 
-	args := []string{"-L", fmt.Sprintf("%db", size), "-r"}
-
+	args := []string{"-L", fmt.Sprintf("%db", size)}
+	if isBlock {
+		args = append(args, "-n")
+	} else {
+		args = append(args, "-r")
+	}
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
 	klog.Infof("lvextend %s", args)
 	cmd := exec.Command("lvextend", args...)

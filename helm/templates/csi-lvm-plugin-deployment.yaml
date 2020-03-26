@@ -60,8 +60,6 @@ spec:
           name: socket-dir
         - mountPath: /registration
           name: registration-dir
-        - mountPath: /csi-data-dir
-          name: csi-data-dir
       - args:
         - --drivername=lvm.csi.k8s.io
         - --endpoint=$(CSI_ENDPOINT)
@@ -70,7 +68,7 @@ spec:
         - --vgname=$(CSI_VGNAME)
         - --namespace=$(CSI_NAMESPACE)
         - --provisionerimage=$(CSI_PROVISIONER_IMAGE)
-        - --pullpolicy=$(CSI_PULL_POILICY)
+        - --pullpolicy=$(CSI_PULL_POLICY)
         env:
         - name: CSI_ENDPOINT
           value: unix:///csi/csi.sock
@@ -120,12 +118,20 @@ spec:
         - mountPath: /var/lib/kubelet/plugins
           mountPropagation: Bidirectional
           name: plugins-dir
-        - mountPath: /csi-data-dir
-          name: csi-data-dir
         - mountPath: /dev
           name: dev-dir
+          mountPropagation: HostToContainer
         - mountPath: /lib/modules
           name: mod-dir
+        - mountPath: /etc/lvm/backup
+          name: lvmbackup
+          mountPropagation: Bidirectional
+        - mountPath: /etc/lvm/cache
+          name: lvmcache
+          mountPropagation: Bidirectional
+        - mountPath: /run/lock/lvm
+          name: lvmlock
+          mountPropagation: Bidirectional
       - args:
         - --csi-address=/csi/csi.sock
         - --health-port=9898
@@ -161,10 +167,6 @@ spec:
           type: Directory
         name: plugins-dir
       - hostPath:
-          path: /var/lib/csi-lvm-data/
-          type: DirectoryOrCreate
-        name: csi-data-dir
-      - hostPath:
           path: /dev
           type: Directory
         name: dev-dir
@@ -172,3 +174,15 @@ spec:
           path: /lib/modules
           type: Directory
         name: mod-dir
+      - hostPath:
+          path: /etc/lvm/backup
+          type: DirectoryOrCreate
+        name: lvmbackup
+      - hostPath:
+          path: /etc/lvm/cache
+          type: DirectoryOrCreate
+        name: lvmcache
+      - hostPath:
+          path: /run/lock/lvm
+          type: DirectoryOrCreate
+        name: lvmlock

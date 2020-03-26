@@ -1,7 +1,9 @@
 #!/usr/bin/env bats -p
 
 @test "deploy csi-lvm-controller" {
-    run helm install mytest --set lvm.devicePattern='/dev/loop[0-1]' --set pluginImage.pullPolicy=IfNotPresent --set provisionerImage.pullPolicy=IfNotPresent --wait /files/helm
+    run helm uninstall mytest
+    run sleep 10
+    run helm install mytest --wait /files/helm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}"
     [ "$status" -eq 0 ]
 }
 
@@ -25,7 +27,7 @@
 }
 
 @test "linear pvc bound" {
-    run kubectl wait -n default --for=condition=ready pod/volume-test --timeout=80s
+    run kubectl wait -n default --for=condition=ready pod/volume-test --timeout=180s
     run kubectl get pvc lvm-pvc-linear -o jsonpath="{.metadata.name},{.status.phase}"
     [ "$status" -eq 0 ]
     [ "$output" = "lvm-pvc-linear,Bound" ]
@@ -48,6 +50,26 @@
     run kubectl get pods volume-test-block -o jsonpath="{.metadata.name},{.status.phase}"
     [ "$status" -eq 0 ]
     [ "$output" = "volume-test-block,Running" ]
+}
+
+@test "resize volume requests" {
+    run kubectl apply -f /files/pvc-resize.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "persistentvolumeclaim/lvm-pvc-block configured" ]
+    [ "${lines[1]}" = "persistentvolumeclaim/lvm-pvc-linear configured" ]
+}
+
+@test "check new linear volume size" {
+    run sleep 90
+    run kubectl get pvc lvm-pvc-linear -o jsonpath='{.status.capacity.storage}'
+    [ "$status" -eq 0 ]
+    [ "$output" = "20Mi" ]
+}
+
+@test "check new block volume size" {
+    run kubectl get pvc lvm-pvc-block -o jsonpath='{.status.capacity.storage}'
+    [ "$status" -eq 0 ]
+    [ "$output" = "20Mi" ]
 }
 
 @test "delete linear pod" {
