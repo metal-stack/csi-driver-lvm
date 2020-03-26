@@ -35,9 +35,9 @@ tests: lvmplugin
 	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:latest . '
 	@sh -c '. ./tests/files/.dockerenv && docker build -t csi-lvm-tests tests' >/dev/null
 	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests bats /bats'
-	@rm tests/files/.dockerenv
-	@rm tests/files/.kubeconfig
-	@minikube delete
+	#@rm tests/files/.dockerenv
+	#@rm tests/files/.kubeconfig
+	#@minikube delete
 
 .PHONY: cijob
 cijob: lvmplugin

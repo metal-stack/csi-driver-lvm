@@ -68,7 +68,7 @@ spec:
         - --vgname=$(CSI_VGNAME)
         - --namespace=$(CSI_NAMESPACE)
         - --provisionerimage=$(CSI_PROVISIONER_IMAGE)
-        - --pullpolicy=$(CSI_PULL_POILICY)
+        - --pullpolicy=$(CSI_PULL_POLICY)
         env:
         - name: CSI_ENDPOINT
           value: unix:///csi/csi.sock
