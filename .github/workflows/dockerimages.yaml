@@ -1,0 +1,21 @@
+name: Docker Image from master
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - uses: olegtarasov/get-tag@v1
+      id: tagName
+    - name: Build the Docker images
+      run: |
+        docker login -u mwennrich -p ${{ secrets.DOCKER_HUB_TOKEN }}
+        make dockerimages
+        make dockerpush
