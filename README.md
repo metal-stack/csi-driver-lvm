@@ -3,7 +3,7 @@
 
 ## Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm ##
 
-For resize of block devices, the filesystem-expansion has to be perfomend by the app using the block device
+For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
 
 ### Todo ###
 
