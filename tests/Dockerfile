@@ -6,6 +6,9 @@ ENV DOCKER_TAG=$docker_tag
 ARG devicepattern
 ENV DEVICEPATTERN=$devicepattern
 
+ARG pullpolicy
+ENV PULL_POLICY=$pullpolicy
+
 ENV KUBECONFIG /files/.kubeconfig
 
 RUN apk add --update ca-certificates \

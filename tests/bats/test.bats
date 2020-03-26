@@ -3,7 +3,7 @@
 @test "deploy csi-lvm-controller" {
     run helm uninstall mytest
     run sleep 10
-    run helm install mytest --wait /files/helm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}"
+    run helm install mytest --wait /files/helm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}" --set pluginImage.pullPolicy=${PULL_POLICY} --set provisionerImage.pullPolicy=${PULL_POLICY}
     [ "$status" -eq 0 ]
 }
 
@@ -79,6 +79,56 @@
 }
 
 @test "delete block pod" {
+    run kubectl delete -f /files/block.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod \"volume-test-block\" deleted" ]
+}
+
+@test "deploy linear pod again" {
+    run kubectl apply -f /files/linear.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod/volume-test created" ]
+}
+
+@test "deploy block pod again" {
+    run kubectl apply -f /files/block.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod/volume-test-block created" ]
+}
+
+@test "linear pvc bound again" {
+    run kubectl wait -n default --for=condition=ready pod/volume-test --timeout=180s
+    run kubectl get pvc lvm-pvc-linear -o jsonpath="{.metadata.name},{.status.phase}"
+    [ "$status" -eq 0 ]
+    [ "$output" = "lvm-pvc-linear,Bound" ]
+}
+
+@test "linear pod running again" {
+    run kubectl get pods volume-test -o jsonpath="{.metadata.name},{.status.phase}"
+    [ "$status" -eq 0 ]
+    [ "$output" = "volume-test,Running" ]
+}
+
+@test "block pvc bound again" {
+    run kubectl wait -n default --for=condition=ready pod/volume-test-block --timeout=40s
+    run kubectl get pvc lvm-pvc-block -o jsonpath="{.metadata.name},{.status.phase}"
+    [ "$status" -eq 0 ]
+    [ "$output" = "lvm-pvc-block,Bound" ]
+}
+
+@test "block pod running again" {
+    run kubectl get pods volume-test-block -o jsonpath="{.metadata.name},{.status.phase}"
+    [ "$status" -eq 0 ]
+    [ "$output" = "volume-test-block,Running" ]
+}
+
+@test "delete linear pod again" {
+    run kubectl delete -f /files/linear.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod \"volume-test\" deleted" ]
+}
+
+@test "delete block pod again" {
     run kubectl delete -f /files/block.yaml
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "pod \"volume-test-block\" deleted" ]

@@ -150,9 +150,7 @@ func (lvm *Lvm) Run() {
 }
 
 func mountLV(lvname, mountPath string, vgName string) (string, error) {
-	// check for format with blkid /dev/csi-lvm/pvc-xxxxx
-	// /dev/dm-3: UUID="d1910e3a-32a9-48d2-aa2e-e5ad018237c9" TYPE="ext4"
-	lvPath := fmt.Sprintf("/csi-lvm/%s/%s", vgName, lvname)
+	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 
 	formatted := false
 	// check for already formatted
@@ -199,7 +197,7 @@ func mountLV(lvname, mountPath string, vgName string) (string, error) {
 }
 
 func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
-	lvPath := fmt.Sprintf("/csi-lvm/%s/%s", vgName, lvname)
+	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 	_, err := os.Create(mountPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to create mount directory for lv:%s err:%v", lvname, err)
@@ -278,7 +276,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 						{
 							Name:             "devices",
 							ReadOnly:         false,
-							MountPath:        "/csi-lvm",
+							MountPath:        "/dev",
 							MountPropagation: &mountPropagationBidirectional,
 						},
 						{
@@ -305,7 +303,8 @@ func createProvisionerPod(va volumeAction) (err error) {
 							MountPropagation: &mountPropagationBidirectional,
 						},
 					},
-					ImagePullPolicy: va.pullPolicy,
+					TerminationMessagePath: "/termination.log",
+					ImagePullPolicy:        va.pullPolicy,
 					SecurityContext: &v1.SecurityContext{
 						Privileged: &privileged,
 					},
@@ -530,7 +529,7 @@ func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 		args = append(args, "--add-tag", tag)
 	}
 	args = append(args, vg)
-	klog.Infof("lvreate %s", args)
+	klog.Infof("lvcreate %s", args)
 	cmd := exec.Command("lvcreate", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
