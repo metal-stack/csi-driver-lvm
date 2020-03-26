@@ -150,7 +150,7 @@ func (lvm *Lvm) Run() {
 }
 
 func mountLV(lvname, mountPath string, vgName string) (string, error) {
-	lvPath := fmt.Sprintf("/csi-lvm/%s/%s", vgName, lvname)
+	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 
 	formatted := false
 	// check for already formatted
@@ -197,7 +197,7 @@ func mountLV(lvname, mountPath string, vgName string) (string, error) {
 }
 
 func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
-	lvPath := fmt.Sprintf("/csi-lvm/%s/%s", vgName, lvname)
+	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 	_, err := os.Create(mountPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to create mount directory for lv:%s err:%v", lvname, err)
@@ -276,7 +276,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 						{
 							Name:             "devices",
 							ReadOnly:         false,
-							MountPath:        "/csi-lvm",
+							MountPath:        "/dev/csi-lvm",
 							MountPropagation: &mountPropagationBidirectional,
 						},
 						{
@@ -324,7 +324,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 					Name: "devices",
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
-							Path: "/dev",
+							Path: "/dev/csi-lvm",
 							Type: &hostPathType,
 						},
 					},
