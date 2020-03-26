@@ -3,6 +3,9 @@ FROM alpine
 ARG docker_tag
 ENV DOCKER_TAG=$docker_tag
 
+ARG devicepattern
+ENV DEVICEPATTERN=$devicepattern
+
 ENV KUBECONFIG /files/.kubeconfig
 
 RUN apk add --update ca-certificates \
