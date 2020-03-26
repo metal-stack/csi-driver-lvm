@@ -150,8 +150,6 @@ func (lvm *Lvm) Run() {
 }
 
 func mountLV(lvname, mountPath string, vgName string) (string, error) {
-	// check for format with blkid /dev/csi-lvm/pvc-xxxxx
-	// /dev/dm-3: UUID="d1910e3a-32a9-48d2-aa2e-e5ad018237c9" TYPE="ext4"
 	lvPath := fmt.Sprintf("/csi-lvm/%s/%s", vgName, lvname)
 
 	formatted := false
@@ -530,7 +528,7 @@ func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 		args = append(args, "--add-tag", tag)
 	}
 	args = append(args, vg)
-	klog.Infof("lvreate %s", args)
+	klog.Infof("lvcreate %s", args)
 	cmd := exec.Command("lvcreate", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
