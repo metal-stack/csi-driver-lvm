@@ -152,7 +152,7 @@ func (lvm *Lvm) Run() {
 func mountLV(lvname, mountPath string, vgName string) (string, error) {
 	// check for format with blkid /dev/csi-lvm/pvc-xxxxx
 	// /dev/dm-3: UUID="d1910e3a-32a9-48d2-aa2e-e5ad018237c9" TYPE="ext4"
-	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
+	lvPath := fmt.Sprintf("/csi-lvm/%s/%s", vgName, lvname)
 
 	formatted := false
 	// check for already formatted
@@ -199,7 +199,7 @@ func mountLV(lvname, mountPath string, vgName string) (string, error) {
 }
 
 func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
-	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
+	lvPath := fmt.Sprintf("/csi-lvm/%s/%s", vgName, lvname)
 	_, err := os.Create(mountPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to create mount directory for lv:%s err:%v", lvname, err)
@@ -256,7 +256,6 @@ func createProvisionerPod(va volumeAction) (err error) {
 	hostPathType := v1.HostPathDirectoryOrCreate
 	privileged := true
 	mountPropagationBidirectional := v1.MountPropagationBidirectional
-	MountPropagationHostToContainer := v1.MountPropagationHostToContainer
 	provisionerPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: string(va.action) + "-" + va.name,
@@ -279,8 +278,8 @@ func createProvisionerPod(va volumeAction) (err error) {
 						{
 							Name:             "devices",
 							ReadOnly:         false,
-							MountPath:        "/dev",
-							MountPropagation: &MountPropagationHostToContainer,
+							MountPath:        "/csi-lvm",
+							MountPropagation: &mountPropagationBidirectional,
 						},
 						{
 							Name:      "modules",

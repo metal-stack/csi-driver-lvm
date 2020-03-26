@@ -6,12 +6,12 @@ lvm:
 pluginImage:
   repository: mwennrich/lvmplugin
   tag: latest
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 provisionerImage:
   repository: mwennrich/csi-lvmplugin-provisioner
   tag: latest
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 rbac:
   create: true

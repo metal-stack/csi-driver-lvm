@@ -118,7 +118,7 @@ spec:
         - mountPath: /var/lib/kubelet/plugins
           mountPropagation: Bidirectional
           name: plugins-dir
-        - mountPath: /dev
+        - mountPath: /csi-lvm
           name: dev-dir
           mountPropagation: HostToContainer
         - mountPath: /lib/modules
