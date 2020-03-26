@@ -1,16 +1,5 @@
-# Copyright 2019 The Kubernetes Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+GO111MODULE := on
+DOCKER_TAG := $(or ${GITHUB_TAG_NAME}, latest)
 
 all: provisioner lvmplugin
 
@@ -24,14 +13,14 @@ provisioner:
 	strip bin/csi-lvmplugin-provisioner
 
 .PHONY: dockerimages
-dockerimages:
-	docker build -t mwennrich/lvmplugin:latest . 
-	docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile
+dockerimages: provisioner lvmplugin
+	docker build -t mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile
+	docker build -t mwennrich/lvmplugin:${DOCKER_TAG} .
 
 .PHONY: dockerpush
 dockerpush:
-	docker push mwennrich/lvmplugin:latest 
-	docker push mwennrich/csi-lvmplugin-provisioner:latest 
+	docker push mwennrich/lvmplugin:${DOCKER_TAG}
+	docker push mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG}
 
 .PHONY: tests
 tests: lvmplugin
@@ -41,6 +30,7 @@ tests: lvmplugin
 	@kubectl config view --flatten --minify > tests/files/.kubeconfig
 	@minikube docker-env > tests/files/.dockerenv
 	@cp -R helm tests/files
+	@sh -c '. ./tests/files/.dockerenv && docker pull nginx:stable-alpine'
 	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile'
 	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:latest . '
 	@sh -c '. ./tests/files/.dockerenv && docker build -t csi-lvm-tests tests' >/dev/null
@@ -54,6 +44,7 @@ cijob: lvmplugin
 	./tests/files/start-minikube-on-github.sh
 	kubectl config view --flatten --minify > tests/files/.kubeconfig
 	@cp -R helm tests/files
+	docker pull nginx:stable-alpine
 	docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile
 	docker build -t mwennrich/lvmplugin:latest .
 	docker build -t csi-lvm-tests tests > /dev/null

@@ -25,10 +25,22 @@
 }
 
 @test "linear pvc bound" {
-    run kubectl wait -n default --for=condition=ready pod/volume-test --timeout=80s
+    run kubectl wait -n default --for=condition=ready pod/volume-test --timeout=180s
     run kubectl get pvc lvm-pvc-linear -o jsonpath="{.metadata.name},{.status.phase}"
     [ "$status" -eq 0 ]
     [ "$output" = "lvm-pvc-linear,Bound" ]
+}
+
+@test "debug events" {
+    run kubectl get events -A
+    echo "output = ${output}"
+    [ "$status" -eq 1 ]
+}
+
+@test "debug csi-lvm" {
+    run timeout 5 stern -n default .
+    echo "output = ${output}"
+    [ "$status" -eq 0 ]
 }
 
 @test "linear pod running" {
