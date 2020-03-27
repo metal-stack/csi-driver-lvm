@@ -3,7 +3,7 @@
 @test "deploy csi-lvm-controller" {
     run helm uninstall mytest
     run sleep 10
-    run helm install mytest --wait /files/helm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}"
+    run helm install mytest --wait /files/helm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}" --set pluginImage.pullPolicy=${PULL_POLICY} --set provisionerImage.pullPolicy=${PULL_POLICY}
     [ "$status" -eq 0 ]
 }
 
@@ -60,7 +60,7 @@
 }
 
 @test "check new linear volume size" {
-    run sleep 90
+    run sleep 900
     run kubectl get pvc lvm-pvc-linear -o jsonpath='{.status.capacity.storage}'
     [ "$status" -eq 0 ]
     [ "$output" = "20Mi" ]

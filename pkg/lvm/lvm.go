@@ -150,8 +150,6 @@ func (lvm *Lvm) Run() {
 }
 
 func mountLV(lvname, mountPath string, vgName string) (string, error) {
-	// check for format with blkid /dev/csi-lvm/pvc-xxxxx
-	// /dev/dm-3: UUID="d1910e3a-32a9-48d2-aa2e-e5ad018237c9" TYPE="ext4"
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 
 	formatted := false
@@ -256,7 +254,6 @@ func createProvisionerPod(va volumeAction) (err error) {
 	hostPathType := v1.HostPathDirectoryOrCreate
 	privileged := true
 	mountPropagationBidirectional := v1.MountPropagationBidirectional
-	MountPropagationHostToContainer := v1.MountPropagationHostToContainer
 	provisionerPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: string(va.action) + "-" + va.name,
@@ -280,7 +277,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 							Name:             "devices",
 							ReadOnly:         false,
 							MountPath:        "/dev",
-							MountPropagation: &MountPropagationHostToContainer,
+							MountPropagation: &mountPropagationBidirectional,
 						},
 						{
 							Name:      "modules",
@@ -306,7 +303,8 @@ func createProvisionerPod(va volumeAction) (err error) {
 							MountPropagation: &mountPropagationBidirectional,
 						},
 					},
-					ImagePullPolicy: va.pullPolicy,
+					TerminationMessagePath: "/termination.log",
+					ImagePullPolicy:        va.pullPolicy,
 					SecurityContext: &v1.SecurityContext{
 						Privileged: &privileged,
 					},
@@ -531,7 +529,7 @@ func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 		args = append(args, "--add-tag", tag)
 	}
 	args = append(args, vg)
-	klog.Infof("lvreate %s", args)
+	klog.Infof("lvcreate %s", args)
 	cmd := exec.Command("lvcreate", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
