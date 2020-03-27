@@ -5,12 +5,12 @@ lvm:
 
 pluginImage:
   repository: mwennrich/lvmplugin
-  tag: v0.1.1
+  tag: v0.1.2
   pullPolicy: IfNotPresent
 
 provisionerImage:
   repository: mwennrich/csi-lvmplugin-provisioner
-  tag: v0.1.1
+  tag: v0.1.2
   pullPolicy: IfNotPresent
 
 rbac:
