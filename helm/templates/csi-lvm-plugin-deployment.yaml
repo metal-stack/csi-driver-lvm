@@ -118,12 +118,9 @@ spec:
         - mountPath: /var/lib/kubelet/plugins
           mountPropagation: Bidirectional
           name: plugins-dir
-        - mountPath: /dev/csi-lvm
+        - mountPath: /dev
           name: dev-dir
-          mountPropagation: Bidirectional
-        - mountPath: /dev/mapper
-          name: dev-mapper
-          mountPropagation: Bidirectional
+          mountPropagation: HostToContainer
         - mountPath: /lib/modules
           name: mod-dir
         - mountPath: /etc/lvm/backup
@@ -170,13 +167,9 @@ spec:
           type: Directory
         name: plugins-dir
       - hostPath:
-          path: /dev/csi-lvm
-          type: DirectoryOrCreate
-        name: dev-dir
-      - hostPath:
-          path: /dev/mapper
+          path: /dev
           type: Directory
-        name: dev-mapper
+        name: dev-dir
       - hostPath:
           path: /lib/modules
           type: Directory

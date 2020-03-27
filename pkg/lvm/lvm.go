@@ -276,7 +276,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 						{
 							Name:             "devices",
 							ReadOnly:         false,
-							MountPath:        "/dev/csi-lvm",
+							MountPath:        "/dev",
 							MountPropagation: &mountPropagationBidirectional,
 						},
 						{
@@ -303,7 +303,8 @@ func createProvisionerPod(va volumeAction) (err error) {
 							MountPropagation: &mountPropagationBidirectional,
 						},
 					},
-					ImagePullPolicy: va.pullPolicy,
+					TerminationMessagePath: "/termination.log",
+					ImagePullPolicy:        va.pullPolicy,
 					SecurityContext: &v1.SecurityContext{
 						Privileged: &privileged,
 					},
@@ -324,7 +325,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 					Name: "devices",
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
-							Path: "/dev/csi-lvm",
+							Path: "/dev",
 							Type: &hostPathType,
 						},
 					},
