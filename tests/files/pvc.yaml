@@ -2,12 +2,12 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: lvm-pvc-block
-  namespace: default
+  namespace: PRTAG
 spec:
   accessModes:
     - ReadWriteOnce
   volumeMode: Block
-  storageClassName: csi-lvm-sc-linear
+  storageClassName: PRTAG-csi-lvm-sc-linear
   resources:
     requests:
       storage: 10Mi
@@ -16,11 +16,11 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: lvm-pvc-linear
-  namespace: default
+  namespace: PRTAG
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: csi-lvm-sc-linear
+  storageClassName: PRTAG-csi-lvm-sc-linear
   resources:
     requests:
       storage: 10Mi

@@ -1,0 +1,23 @@
+
+lvm:
+  # This one you should change
+  devicePattern: /dev/nvme[0-9]n[0-9]
+
+  # these are primariliy for testing purposes
+  vgName: csi-lvm
+  driverName: lvm.csi.metal-stack.io
+  storageClassStub: csi-lvm
+
+pluginImage:
+  repository: mwennrich/lvmplugin
+  tag: v0.1.2
+  pullPolicy: IfNotPresent
+
+provisionerImage:
+  repository: mwennrich/csi-lvmplugin-provisioner
+  tag: v0.1.2
+  pullPolicy: IfNotPresent
+
+rbac:
+  create: true
+  pspEnabled: true

@@ -24,23 +24,23 @@ dockerpush:
 
 .PHONY: tests
 tests:
-	#@if minikube status >/dev/null 2>/dev/null; then echo "a minikube is already running. Exiting ..."; exit 1; fi
+	@if minikube status >/dev/null 2>/dev/null; then echo "a minikube is already running. Exiting ..."; exit 1; fi
 	@echo "Starting minikube testing setup ... please wait ..."
 	@./start-minikube-on-linux.sh >/dev/null 2>/dev/null
 	@kubectl config view --flatten --minify > tests/files/.kubeconfig
 	@minikube docker-env > tests/files/.dockerenv
 	@cp -R helm tests/files
-	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile'
-	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:latest . '
-	@sh -c '. ./tests/files/.dockerenv && docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern="/dev/loop[0-1]" --build-arg pullpolicy=IfNotPresent -t csi-lvm-tests tests' > /dev/null
-	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests bats /bats'
-	#@rm tests/files/.dockerenv
-	#@rm tests/files/.kubeconfig
-	#@minikube delete
+	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile'
+	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:${DOCKER_TAG} . '
+	@sh -c '. ./tests/files/.dockerenv && docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern="/dev/loop[0-1]" --build-arg pullpolicy=IfNotPresent -t csi-lvm-tests:${DOCKER_TAG} tests' > /dev/null
+	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests:${DOCKER_TAG} bats /bats'
+	@rm tests/files/.dockerenv
+	@rm tests/files/.kubeconfig
+	@minikube delete
 
 .PHONY: metalci
 metalci: dockerimages dockerpush
 	@cp -R helm tests/files
-	docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests tests > /dev/null
-	docker run --rm csi-lvm-tests bats /bats
+	docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests:${DOCKER_TAG} tests > /dev/null
+	docker run --rm csi-lvm-tests:${DOCKER_TAG} bats /bats
 
