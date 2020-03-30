@@ -2,6 +2,7 @@
 lvm:
   devicePattern: /dev/nvme[0-9]n[0-9]
   vgName: csi-lvm
+  driverName: lvm.csi.metal-stack.io
 
 pluginImage:
   repository: mwennrich/lvmplugin

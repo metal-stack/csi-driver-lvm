@@ -24,7 +24,7 @@ dockerpush:
 
 .PHONY: tests
 tests:
-	#@if minikube status >/dev/null 2>/dev/null; then echo "a minikube is already running. Exiting ..."; exit 1; fi
+	@if minikube status >/dev/null 2>/dev/null; then echo "a minikube is already running. Exiting ..."; exit 1; fi
 	@echo "Starting minikube testing setup ... please wait ..."
 	@./start-minikube-on-linux.sh >/dev/null 2>/dev/null
 	@kubectl config view --flatten --minify > tests/files/.kubeconfig
@@ -34,9 +34,9 @@ tests:
 	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:latest . '
 	@sh -c '. ./tests/files/.dockerenv && docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern="/dev/loop[0-1]" --build-arg pullpolicy=IfNotPresent -t csi-lvm-tests tests' > /dev/null
 	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests bats /bats'
-	#@rm tests/files/.dockerenv
-	#@rm tests/files/.kubeconfig
-	#@minikube delete
+	@rm tests/files/.dockerenv
+	@rm tests/files/.kubeconfig
+	@minikube delete
 
 .PHONY: metalci
 metalci: dockerimages dockerpush

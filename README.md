@@ -1,9 +1,27 @@
+# csi-driver-lvm #
 
-# BETA VERSION - DO NOT USE YET FOR PRODUCTION #
+CSI DRIVER LVM utilizes local storage of Kubernetes nodes to provide persistent storage for pods.
+
+It automatically creates hostPath based persistent volumes on the nodes.
+
+Underneath it creates a LVM logical volume on the local disks. A grok pattern, which disks to use can be specified.
+
+This CSI driver is derived from https://github.com/kubernetes-csi/csi-driver-host-path and https://github.com/metal-stack/csi-lvm 
+
+
+## BETA VERSION - use at own risk ##
 
 ## Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm ##
 
 For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
+
+### Installation ###
+
+You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
+
+```bash
+helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
+```
 
 ### Todo ###
 
@@ -14,8 +32,8 @@ For the special case of block volumes, the filesystem-expansion has to be perfom
 TL;DR:
 
 ```bash
-./start.sh
-helm install mytest helm --set lvm.devicePattern='/dev/loop[0-1]'
+./start-minikube-on-linux.sh
+helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/loop[0-1]'
 ```
 
 ### Start minikube and create dummy volumes ###
@@ -46,12 +64,12 @@ docker build
 docker push
 ```
 
-Replace mwennrich/lvmplugin:latest image in helm/values.yaml
+Replace mwennrich/lvmplugin:latest image in helm/csi-driver-lvm/values.yaml
 
 ### Deploy ###
 
 ```bash
-helm install mytest helm
+helm install mytest helm/csi-driver-lvm
 ```
 
 ### Test ###

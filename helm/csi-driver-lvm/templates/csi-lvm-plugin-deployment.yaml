@@ -61,7 +61,7 @@ spec:
         - mountPath: /registration
           name: registration-dir
       - args:
-        - --drivername=lvm.csi.k8s.io
+        - --drivername={{ .Values.lvm.driverName }}
         - --endpoint=$(CSI_ENDPOINT)
         - --devices=$(CSI_DEVICESPATTERN)
         - --nodeid=$(KUBE_NODE_NAME)

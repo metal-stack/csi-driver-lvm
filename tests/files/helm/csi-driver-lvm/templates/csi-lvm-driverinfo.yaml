@@ -1,7 +1,7 @@
 apiVersion: storage.k8s.io/v1beta1
 kind: CSIDriver
 metadata:
-  name: lvm.csi.k8s.io
+  name: {{ .Values.lvm.driverName }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}

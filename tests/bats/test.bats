@@ -1,9 +1,8 @@
 #!/usr/bin/env bats -p
 
 @test "deploy csi-lvm-controller" {
-    run helm uninstall mytest
-    run sleep 10
-    run helm install mytest --wait /files/helm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}" --set pluginImage.pullPolicy=${PULL_POLICY} --set provisionerImage.pullPolicy=${PULL_POLICY}
+    run kubectl create ns DOCKER_TAG
+    run helm install DOCKER_TAG --wait /files/helm/csi-driver-lvm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}" --set pluginImage.pullPolicy=${PULL_POLICY} --set provisionerImage.pullPolicy=${PULL_POLICY} --set lvm.driverName="${DOCKER_TAG}.lvm.csi.metal-stack.io -n DOCKER_TAG
     [ "$status" -eq 0 ]
 }
 
@@ -89,4 +88,9 @@
     [ "$status" -eq 0 ]
     [ "${lines[0]}" = "persistentvolumeclaim \"lvm-pvc-block\" deleted" ]
     [ "${lines[1]}" = "persistentvolumeclaim \"lvm-pvc-linear\" deleted" ]
+}
+@test "clean up " {
+    run helm uninstall DOCKER_TAG --wait
+    run kubectl delete ns DOCKER_TAG
+    [ "$status" -eq 0 ]
 }

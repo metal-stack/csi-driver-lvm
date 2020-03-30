@@ -19,9 +19,9 @@ metadata:
   labels:
     app: wordpress
 spec:
-  storageClassName: rook-ceph-block
+  storageClassName: rook-cephfs
   accessModes:
-  - ReadWriteOnce
+  - ReadWriteMany
   resources:
     requests:
       storage: 20Gi
@@ -40,6 +40,7 @@ spec:
       tier: frontend
   #strategy:
   #  type: Recreate
+  replicas: 3
   template:
     metadata:
       labels:

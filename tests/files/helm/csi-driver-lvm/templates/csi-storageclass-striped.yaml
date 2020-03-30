@@ -5,7 +5,7 @@ metadata:
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
-provisioner: lvm.csi.k8s.io
+provisioner: {{ .Values.lvm.driverName }}
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
