@@ -9,9 +9,9 @@ Underneath it creates a LVM logical volume on the local disks. A grok pattern, w
 This CSI driver is derived from https://github.com/kubernetes-csi/csi-driver-host-path and https://github.com/metal-stack/csi-lvm 
 
 
-## BETA VERSION - use at own risk ##
+**BETA VERSION - use at own risk**
 
-## Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm ##
+**Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm**
 
 For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
 
@@ -22,6 +22,12 @@ You have to set the devicePattern for your hardware to specify which disks shoul
 ```bash
 helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
 ```
+
+Now you can use one of following storageClasses:
+
+* `csi-lvm-sc-mirror`
+* `csi-lvm-sc-linear`
+* `csi-lvm-sc-striped`
 
 ### Todo ###
 
