@@ -82,6 +82,7 @@ type volumeAction struct {
 	pullPolicy       v1.PullPolicy
 	kubeClient       kubernetes.Clientset
 	namespace        string
+	vgName           string
 }
 
 const (
@@ -248,7 +249,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 	if va.action == actionTypeDelete {
 		args = append(args, "deletelv")
 	}
-	args = append(args, "--lvname", va.name, "--vgname", "csi-lvm")
+	args = append(args, "--lvname", va.name, "--vgname", va.vgName)
 
 	klog.Infof("start provisionerPod with args:%s", args)
 	hostPathType := v1.HostPathDirectoryOrCreate

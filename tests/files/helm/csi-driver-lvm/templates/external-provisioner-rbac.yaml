@@ -12,7 +12,7 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: external-provisioner-runner
+  name: external-provisioner-runner-{{ .Release.Name }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -46,7 +46,7 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-provisioner-role
+  name: csi-provisioner-role-{{ .Release.Name }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -56,7 +56,7 @@ subjects:
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: external-provisioner-runner
+  name: external-provisioner-runner-{{ .Release.Name }}
   apiGroup: rbac.authorization.k8s.io
 
 ---

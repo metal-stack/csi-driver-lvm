@@ -62,6 +62,6 @@ spec:
               name: socket-dir
       volumes:
         - hostPath:
-            path: /var/lib/kubelet/plugins/csi-lvm
+            path: /var/lib/kubelet/plugins/{{ .Values.lvm.storageClassStub }}
             type: DirectoryOrCreate
           name: socket-dir

@@ -168,6 +168,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		provisionerImage: cs.provisionerImage,
 		kubeClient:       cs.kubeClient,
 		namespace:        cs.namespace,
+		vgName:           cs.vgName,
 	}
 	if err := createProvisionerPod(va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)
@@ -216,6 +217,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		provisionerImage: cs.provisionerImage,
 		kubeClient:       cs.kubeClient,
 		namespace:        cs.namespace,
+		vgName:           cs.vgName,
 	}
 	if err := createProvisionerPod(va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)

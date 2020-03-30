@@ -3,7 +3,7 @@
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:
-  name: psp-lvm
+  name: psp-lvm-{{ .Release.Name }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -34,7 +34,7 @@ rules:
   resources:
   - podsecuritypolicies
   resourceNames:
-  - psp-lvm
+  - psp-lvm-{{ .Release.Name }}
   verbs:
   - use
 ---

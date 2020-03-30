@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: volume-test-block
-  namespace: default
+  namespace: PRTAG
 spec:
   containers:
   - name: volume-test-block

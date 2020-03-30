@@ -30,10 +30,10 @@ tests:
 	@kubectl config view --flatten --minify > tests/files/.kubeconfig
 	@minikube docker-env > tests/files/.dockerenv
 	@cp -R helm tests/files
-	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/csi-lvmplugin-provisioner:latest . -f cmd/provisioner/Dockerfile'
-	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:latest . '
-	@sh -c '. ./tests/files/.dockerenv && docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern="/dev/loop[0-1]" --build-arg pullpolicy=IfNotPresent -t csi-lvm-tests tests' > /dev/null
-	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests bats /bats'
+	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile'
+	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:${DOCKER_TAG} . '
+	@sh -c '. ./tests/files/.dockerenv && docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern="/dev/loop[0-1]" --build-arg pullpolicy=IfNotPresent -t csi-lvm-tests:${DOCKER_TAG} tests' > /dev/null
+	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests:${DOCKER_TAG} bats /bats'
 	@rm tests/files/.dockerenv
 	@rm tests/files/.kubeconfig
 	@minikube delete
@@ -41,6 +41,6 @@ tests:
 .PHONY: metalci
 metalci: dockerimages dockerpush
 	@cp -R helm tests/files
-	docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests tests > /dev/null
-	docker run --rm csi-lvm-tests bats /bats
+	docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests:${DOCKER_TAG} tests > /dev/null
+	docker run --rm csi-lvm-tests:${DOCKER_TAG} bats /bats
 

@@ -12,7 +12,7 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: external-resizer-runner
+  name: external-resizer-runner-{{ .Release.Name }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -34,7 +34,7 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-resizer-role
+  name: csi-resizer-role-{{ .Release.Name }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -44,7 +44,7 @@ subjects:
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: external-resizer-runner
+  name: external-resizer-runner-{{ .Release.Name }}
   apiGroup: rbac.authorization.k8s.io
 
 ---
