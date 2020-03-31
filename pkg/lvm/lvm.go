@@ -100,15 +100,15 @@ const (
 // NewLvmDriver creates the driver
 func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*Lvm, error) {
 	if driverName == "" {
-		return nil, fmt.Errorf("No driver name provided")
+		return nil, fmt.Errorf("no driver name provided")
 	}
 
 	if nodeID == "" {
-		return nil, fmt.Errorf("No node id provided")
+		return nil, fmt.Errorf("no node id provided")
 	}
 
 	if endpoint == "" {
-		return nil, fmt.Errorf("No driver endpoint provided")
+		return nil, fmt.Errorf("no driver endpoint provided")
 	}
 	if version != "" {
 		vendorVersion = version
@@ -386,7 +386,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 	}()
 
 	completed := false
-	retrySeconds := 20
+	retrySeconds := 60
 	for i := 0; i < retrySeconds; i++ {
 		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(provisionerPod.Name, metav1.GetOptions{})
 		if err != nil {

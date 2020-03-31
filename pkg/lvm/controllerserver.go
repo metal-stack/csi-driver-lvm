@@ -35,13 +35,6 @@ const (
 	maxStorageCapacity = tib
 )
 
-type accessType int
-
-const (
-	mountAccess accessType = iota
-	blockAccess
-)
-
 type controllerServer struct {
 	caps             []*csi.ControllerServiceCapability
 	nodeID           string
@@ -138,24 +131,12 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 	volumeContext["RequiredBytes"] = size
 
-	pvcName := req.GetParameters()["csi.storage.k8s.io/pvc/name"]
-	pvcNamespace := req.GetParameters()["csi.storage.k8s.io/pvc/namespace"]
-
-	pvc, err := cs.kubeClient.CoreV1().PersistentVolumeClaims(pvcNamespace).Get(pvcName, metav1.GetOptions{})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "couldn't pvc for volume: %s/%s", pvcNamespace, pvcName)
-	}
-
-	node := pvc.ObjectMeta.GetAnnotations()["volume.kubernetes.io/selected-node"]
-	if node == "" {
-		return nil, status.Errorf(codes.Internal, "couldn't find node for volume: %s/%s", pvcNamespace, pvcName)
-	}
-
+	// schedulded node of the pod is the first entry in the preferred segment
+	node := req.GetAccessibilityRequirements().GetPreferred()[0].GetSegments()[topologyKeyNode]
 	topology := []*csi.Topology{&csi.Topology{
 		Segments: map[string]string{topologyKeyNode: node},
 	}}
-
-	klog.V(3).Infof("creating volume %s on node: %s", req.GetName(), node)
+	klog.Infof("creating volume %s on node: %s", req.GetName(), node)
 
 	va := volumeAction{
 		action:           actionTypeCreate,
