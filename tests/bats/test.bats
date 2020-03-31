@@ -97,7 +97,7 @@
 }
 @test "clean up " {
     run helm uninstall ${DOCKER_TAG} -n ${DOCKER_TAG}
-    run sleep 10
+    run sleep 30
     run kubectl delete ns ${DOCKER_TAG}
-    run sleep 90
+    run sleep 10
 }

@@ -9,12 +9,6 @@ import (
 	"k8s.io/klog"
 )
 
-const (
-	linearType  = "linear"
-	stripedType = "striped"
-	mirrorType  = "mirror"
-)
-
 func createLVCmd() *cli.Command {
 	return &cli.Command{
 		Name: "createlv",

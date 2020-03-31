@@ -23,17 +23,35 @@ dockerpush:
 	docker push mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG}
 
 .PHONY: tests
-tests:
+tests: | start-test build-provisioner build-plugin build-test do-test clean-test
+
+.PHONY: start-test
+start-test:
 	@if minikube status >/dev/null 2>/dev/null; then echo "a minikube is already running. Exiting ..."; exit 1; fi
 	@echo "Starting minikube testing setup ... please wait ..."
 	@./start-minikube-on-linux.sh >/dev/null 2>/dev/null
 	@kubectl config view --flatten --minify > tests/files/.kubeconfig
 	@minikube docker-env > tests/files/.dockerenv
-	@cp -R helm tests/files
+
+.PHONY: build-provisioner
+build-provisioner:
 	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile'
+
+.PHONY: build-plugin
+build-plugin:
 	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:${DOCKER_TAG} . '
+
+.PHONY: build-test
+build-test:
+	@cp -R helm tests/files
 	@sh -c '. ./tests/files/.dockerenv && docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern="/dev/loop[0-1]" --build-arg pullpolicy=IfNotPresent -t csi-lvm-tests:${DOCKER_TAG} tests' > /dev/null
+
+.PHONY: do-test
+do-test:
 	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests:${DOCKER_TAG} bats /bats'
+
+.PHONY: clean-test
+clean-test:
 	@rm tests/files/.dockerenv
 	@rm tests/files/.kubeconfig
 	@minikube delete

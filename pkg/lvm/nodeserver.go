@@ -109,7 +109,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 		val := req.GetVolumeContext()["size"]
 		if val == "" {
-			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("ephemeral inline volume is missing size parameter"))
+			return nil, status.Error(codes.InvalidArgument, "ephemeral inline volume is missing size parameter")
 		}
 		size, err := units.RAMInBytes(val)
 		if err != nil {
