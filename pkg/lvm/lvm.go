@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"github.com/google/lvmd/commands"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	v1 "k8s.io/api/core/v1"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
@@ -389,6 +391,13 @@ func createProvisionerPod(va volumeAction) (err error) {
 	retrySeconds := 60
 	for i := 0; i < retrySeconds; i++ {
 		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(provisionerPod.Name, metav1.GetOptions{})
+		if pod.Status.Phase == v1.PodFailed {
+			// pod terminated in time, but with failure
+			// return ResourceExhausted so the requesting pod can be rescheduled to anonther node
+			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
+			klog.Info("provisioner pod terminated with failure")
+			return status.Error(codes.ResourceExhausted, "volume creation failed")
+		}
 		if err != nil {
 			klog.Errorf("error reading provisioner pod:%v", err)
 		} else if pod.Status.Phase == v1.PodSucceeded {
