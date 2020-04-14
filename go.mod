@@ -1,4 +1,4 @@
-module github.com/mwennrich/csi-driver-lvm
+module github.com/metal-stack/csi-driver-lvm
 
 go 1.13
 

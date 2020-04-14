@@ -23,7 +23,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/mwennrich/csi-driver-lvm/pkg/lvm"
+	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 )
 
 func init() {

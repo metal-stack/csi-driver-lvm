@@ -9,12 +9,12 @@ lvm:
   storageClassStub: csi-lvm
 
 pluginImage:
-  repository: mwennrich/lvmplugin
+  repository: metalstack/lvmplugin
   tag: v0.2.0
   pullPolicy: IfNotPresent
 
 provisionerImage:
-  repository: mwennrich/csi-lvmplugin-provisioner
+  repository: metalstack/csi-lvmplugin-provisioner
   tag: v0.2.0
   pullPolicy: IfNotPresent
 
