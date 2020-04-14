@@ -70,7 +70,7 @@ docker build
 docker push
 ```
 
-Replace mwennrich/lvmplugin:latest image in helm/csi-driver-lvm/values.yaml
+Replace metalstack/lvmplugin:latest image in helm/csi-driver-lvm/values.yaml
 
 ### Deploy ###
 

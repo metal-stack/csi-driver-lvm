@@ -14,13 +14,13 @@ provisioner:
 
 .PHONY: dockerimages
 dockerimages:
-	docker build -t mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile
-	docker build -t mwennrich/lvmplugin:${DOCKER_TAG} .
+	docker build -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile
+	docker build -t metalstack/lvmplugin:${DOCKER_TAG} .
 
 .PHONY: dockerpush
 dockerpush:
-	docker push mwennrich/lvmplugin:${DOCKER_TAG}
-	docker push mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG}
+	docker push metalstack/lvmplugin:${DOCKER_TAG}
+	docker push metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG}
 
 .PHONY: tests
 tests: | start-test build-provisioner build-plugin build-test do-test clean-test
@@ -35,11 +35,11 @@ start-test:
 
 .PHONY: build-provisioner
 build-provisioner:
-	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile'
+	@sh -c '. ./tests/files/.dockerenv && docker build -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile'
 
 .PHONY: build-plugin
 build-plugin:
-	@sh -c '. ./tests/files/.dockerenv && docker build -t mwennrich/lvmplugin:${DOCKER_TAG} . '
+	@sh -c '. ./tests/files/.dockerenv && docker build -t metalstack/lvmplugin:${DOCKER_TAG} . '
 
 .PHONY: build-test
 build-test:
