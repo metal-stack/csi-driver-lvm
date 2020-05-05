@@ -42,13 +42,6 @@ spec:
               fieldPath: spec.nodeName
         image: quay.io/k8scsi/csi-node-driver-registrar:v1.3.0
         imagePullPolicy: IfNotPresent
-        lifecycle:
-          preStop:
-            exec:
-              command:
-              - /bin/sh
-              - -c
-              - rm -rf /registration/csi-lvm /registration/csi-lvm-reg.sock
         name: node-driver-registrar
         resources: {}
         securityContext:
