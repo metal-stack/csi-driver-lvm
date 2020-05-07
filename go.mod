@@ -1,6 +1,6 @@
 module github.com/metal-stack/csi-driver-lvm
 
-go 1.13
+go 1.14
 
 require (
 	github.com/container-storage-interface/spec v1.2.0
@@ -8,6 +8,7 @@ require (
 	github.com/golang/protobuf v1.3.3 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/google/lvmd v0.0.0-20190916151813-e6e28ff087f6
+	github.com/googleapis/gnostic v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.9 // indirect
 	github.com/kubernetes-csi/csi-lib-utils v0.7.0
 	github.com/urfave/cli/v2 v2.1.1
