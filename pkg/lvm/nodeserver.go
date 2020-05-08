@@ -22,9 +22,9 @@ import (
 	"os/exec"
 	"strings"
 
+	"context"
+
 	"github.com/docker/go-units"
-	"github.com/google/lvmd/commands"
-	"golang.org/x/net/context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -118,7 +118,12 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 		volID := req.GetVolumeId()
 
-		output, err := CreateLVS(context.Background(), ns.vgName, volID, uint64(size), req.GetVolumeContext()["type"])
+		output, err := CreateVG(ns.vgName, ns.devicesPattern)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create vg: %v output:%s", err, output)
+		}
+
+		output, err = CreateLVS(context.Background(), ns.vgName, volID, uint64(size), req.GetVolumeContext()["type"])
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %v output:%s", err, output)
 		}
@@ -172,7 +177,7 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	// ephemeral volumes start with "csi-"
 	if strings.HasPrefix(volID, "csi-") {
 		// remove ephemeral volume here
-		output, err := commands.RemoveLV(context.Background(), ns.vgName, volID)
+		output, err := RemoveLVS(context.Background(), ns.vgName, volID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to delete lv: %v output:%s", err, output)
 		}

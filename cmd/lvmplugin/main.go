@@ -40,7 +40,7 @@ var (
 	ephemeral         = flag.Bool("ephemeral", false, "publish volumes in ephemeral mode even if kubelet did not ask for it (only needed for Kubernetes 1.15)")
 	maxVolumesPerNode = flag.Int64("maxvolumespernode", 0, "limit of volumes per node")
 	showVersion       = flag.Bool("version", false, "Show version.")
-	devicesPattern    = flag.String("devices", "", "device pattern")
+	devicesPattern    = flag.String("devices", "", "comma-separated grok patterns of the physical volumes to use.")
 	vgName            = flag.String("vgname", "csi-lvm", "name of volume group")
 	namespace         = flag.String("namespace", "csi-lvm", "name of namespace")
 	provisionerImage  = flag.String("provisionerimage", "metalstack/csi-lvmplugin-provisioner", "name of provisioner image")

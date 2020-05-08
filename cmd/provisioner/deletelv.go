@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/lvmd/commands"
+	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"github.com/urfave/cli/v2"
 	"k8s.io/klog"
 )
@@ -44,7 +44,7 @@ func deleteLV(c *cli.Context) error {
 
 	klog.Infof("delete lv %s vg:%s ", lvName, vgName)
 
-	output, err := commands.RemoveLV(context.Background(), vgName, lvName)
+	output, err := lvm.RemoveLVS(context.Background(), vgName, lvName)
 	if err != nil {
 		return fmt.Errorf("unable to delete lv: %v output:%s", err, output)
 	}

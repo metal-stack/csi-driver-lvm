@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/lvmd/commands"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -417,20 +416,14 @@ func createProvisionerPod(va volumeAction) (err error) {
 }
 
 // VgExists checks if the given volume group exists
-func vgExists(name string) bool {
-	vgs, err := commands.ListVG(context.Background())
+func vgExists(vgname string) bool {
+	cmd := exec.Command("vgs", vgname, "--noheadings", "-o", "vg_name")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		klog.Infof("unable to list existing volumegroups:%v", err)
+		return false
 	}
-	vgexists := false
-	for _, vg := range vgs {
-		klog.Infof("compare vg:%s with:%s\n", vg.Name, name)
-		if vg.Name == name {
-			vgexists = true
-			break
-		}
-	}
-	return vgexists
+	return vgname == strings.TrimSpace(string(out))
 }
 
 // VgActivate execute vgchange -ay to activate all volumes of the volume group
@@ -450,8 +443,8 @@ func vgActivate(name string) {
 
 func devices(devicesPattern []string) (devices []string, err error) {
 	for _, devicePattern := range devicesPattern {
-		klog.Infof("search devices :%s ", devicePattern)
-		matches, err := filepath.Glob(devicePattern)
+		klog.Infof("search devices: %s ", devicePattern)
+		matches, err := filepath.Glob(strings.TrimSpace(devicePattern))
 		if err != nil {
 			return nil, err
 		}
@@ -462,7 +455,12 @@ func devices(devicesPattern []string) (devices []string, err error) {
 }
 
 // CreateVG creates a volume group matching the given device patterns
-func CreateVG(name string, devicesPattern []string) (string, error) {
+func CreateVG(name string, devicesPattern string) (string, error) {
+	dp := strings.Split(devicesPattern, ",")
+	if len(dp) == 0 {
+		return name, fmt.Errorf("invalid empty flag %v", dp)
+	}
+
 	vgexists := vgExists(name)
 	if vgexists {
 		klog.Infof("volumegroup: %s already exists\n", name)
@@ -476,7 +474,7 @@ func CreateVG(name string, devicesPattern []string) (string, error) {
 		return name, nil
 	}
 
-	physicalVolumes, err := devices(devicesPattern)
+	physicalVolumes, err := devices(dp)
 	if err != nil {
 		return "", fmt.Errorf("unable to lookup devices from devicesPattern %s, err:%v", devicesPattern, err)
 	}
@@ -546,18 +544,13 @@ func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 }
 
 func lvExists(vg string, name string) bool {
-	lvs, err := commands.ListLV(context.Background(), vg+"/"+name)
+	cmd := exec.Command("lvs", vg+"/"+name, "--noheadings", "-o", "lv_name")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Infof("unable to list existing logicalvolumes:%v", err)
+		klog.Infof("unable to list existing volumes:%v", err)
+		return false
 	}
-
-	for _, lv := range lvs {
-		klog.Infof("compare lv:%s with:%s\n", lv.Name, name)
-		if strings.Contains(lv.Name, name) {
-			return true
-		}
-	}
-	return false
+	return name == strings.TrimSpace(string(out))
 }
 
 func extendLVS(ctx context.Context, vg string, name string, size uint64, isBlock bool) (string, error) {
@@ -577,6 +570,20 @@ func extendLVS(ctx context.Context, vg string, name string, size uint64, isBlock
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
 	klog.Infof("lvextend %s", args)
 	cmd := exec.Command("lvextend", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// RemoveLVS executes lvremove
+func RemoveLVS(ctx context.Context, vg string, name string) (string, error) {
+
+	if !lvExists(vg, name) {
+		return "", fmt.Errorf("logical volume %s does not exist", name)
+	}
+	args := []string{"-q"}
+	args = append(args, fmt.Sprintf("%s/%s", vg, name))
+	klog.Infof("lvremove %s", args)
+	cmd := exec.Command("lvremove", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

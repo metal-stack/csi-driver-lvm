@@ -133,7 +133,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 	// schedulded node of the pod is the first entry in the preferred segment
 	node := req.GetAccessibilityRequirements().GetPreferred()[0].GetSegments()[topologyKeyNode]
-	topology := []*csi.Topology{&csi.Topology{
+	topology := []*csi.Topology{{
 		Segments: map[string]string{topologyKeyNode: node},
 	}}
 	klog.Infof("creating volume %s on node: %s", req.GetName(), node)

@@ -12,6 +12,20 @@
     [ "$status" -eq 0 ]
 }
 
+@test "deploy inline pod with ephemeral volume" {
+    run sleep 10
+    run kubectl apply -f /files/inline.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod/volume-test-inline created" ]
+}
+
+@test "inline pod running" {
+    run kubectl wait -n ${DOCKER_TAG} --for=condition=ready pod/volume-test-inline --timeout=180s
+    run kubectl get -n ${DOCKER_TAG} pods volume-test-inline -o jsonpath="{.metadata.name},{.status.phase}"
+    [ "$status" -eq 0 ]
+    [ "$output" = "volume-test-inline,Running" ]
+}
+
 @test "create pvc" {
     run kubectl apply -f /files/pvc.yaml
     [ "$status" -eq 0 ]

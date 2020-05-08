@@ -100,7 +100,7 @@ spec:
         resources: {}
         securityContext:
           privileged: true
-        terminationMessagePath: /dev/termination-log
+        terminationMessagePath: /termination.log
         terminationMessagePolicy: File
         volumeMounts:
         - mountPath: /csi
@@ -113,7 +113,7 @@ spec:
           name: plugins-dir
         - mountPath: /dev
           name: dev-dir
-          mountPropagation: HostToContainer
+          mountPropagation: Bidirectional
         - mountPath: /lib/modules
           name: mod-dir
         - mountPath: /etc/lvm/backup

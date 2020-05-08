@@ -13,7 +13,7 @@ spec:
   volumes:
     - name: my-csi-volume
       csi:
-        driver: lvm.csi.k8s.io
+        driver: lvm.csi.metal-stack.io
         volumeAttributes:
           size: "20MB"
           type: "linear"
