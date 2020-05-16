@@ -29,9 +29,9 @@ func createLVCmd() *cli.Command {
 				Name:  flagLVMType,
 				Usage: "Required. type of lvs, can be either striped or mirrored",
 			},
-			&cli.StringSliceFlag{
+			&cli.StringFlag{
 				Name:  flagDevicesPattern,
-				Usage: "Required. the patterns of the physical volumes to use.",
+				Usage: "Required. comma-separated grok patterns of the physical volumes to use.",
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -57,19 +57,17 @@ func createLV(c *cli.Context) error {
 	if vgName == "" {
 		return fmt.Errorf("invalid empty flag %v", flagVGName)
 	}
-	devicesPattern := c.StringSlice(flagDevicesPattern)
-	if len(devicesPattern) == 0 {
-		return fmt.Errorf("invalid empty flag %v", flagDevicesPattern)
-	}
 	lvmType := c.String(flagLVMType)
 	if lvmType == "" {
 		return fmt.Errorf("invalid empty flag %v", flagLVMType)
 	}
+	devicesPattern := c.String(flagDevicesPattern)
+	if devicesPattern == "" {
+		return fmt.Errorf("invalid empty flag %v", flagDevicesPattern)
+	}
 
 	klog.Infof("create lv %s size:%d vg:%s devicespattern:%s  type:%s", lvName, lvSize, vgName, devicesPattern, lvmType)
 
-	// TODO
-	// createVG could get called once at the start of the nodeserver
 	output, err := lvm.CreateVG(vgName, devicesPattern)
 	if err != nil {
 		return fmt.Errorf("unable to create vg: %v output:%s", err, output)
@@ -81,8 +79,3 @@ func createLV(c *cli.Context) error {
 	}
 	return nil
 }
-
-// TODO
-// move everything below to lvm package
-// ephemeral volumes can be created directly on the node without a provisioner pod,
-// so these functions are needed there too anyway

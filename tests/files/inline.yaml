@@ -1,0 +1,20 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: volume-test-inline
+  namespace: PRTAG
+spec:
+  containers:
+  - name: inline
+    image: nginx:stable-alpine
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+    - mountPath: "/data"
+      name: lvm-pvc-inline
+  volumes:
+    - name: lvm-pvc-inline
+      csi:
+        driver: PRTAG.lvm.csi.metal-stack.io
+        volumeAttributes:
+          size: "20MB"
+          type: "linear"
