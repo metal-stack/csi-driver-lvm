@@ -4,7 +4,7 @@ COPY / /work
 WORKDIR /work
 RUN make lvmplugin
 
-FROM alpine:3.11
+FROM alpine:3.12
 LABEL maintainers="Metal Authors"
 LABEL description="LVM Driver"
 
