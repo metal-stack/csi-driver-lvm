@@ -580,7 +580,7 @@ func RemoveLVS(ctx context.Context, vg string, name string) (string, error) {
 	if !lvExists(vg, name) {
 		return "", fmt.Errorf("logical volume %s does not exist", name)
 	}
-	args := []string{"-q"}
+	args := []string{"-q", "-y"}
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
 	klog.Infof("lvremove %s", args)
 	cmd := exec.Command("lvremove", args...)
