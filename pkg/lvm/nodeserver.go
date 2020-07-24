@@ -25,6 +25,7 @@ import (
 	"context"
 
 	"github.com/docker/go-units"
+	"golang.org/x/sys/unix"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -248,12 +249,48 @@ func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetC
 					},
 				},
 			},
+			{
+				Type: &csi.NodeServiceCapability_Rpc{
+					Rpc: &csi.NodeServiceCapability_RPC{
+						Type: csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
+					},
+				},
+			},
 		},
 	}, nil
 }
 
 func (ns *nodeServer) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+
+	var fs unix.Statfs_t
+
+	err := unix.Statfs(in.GetVolumePath(), &fs)
+	if err != nil {
+		return nil, err
+	}
+
+	diskFree := int64(fs.Bfree) * fs.Bsize
+	diskTotal := int64(fs.Blocks) * fs.Bsize
+
+	inodesFree := int64(fs.Ffree)
+	inodesTotal := int64(fs.Files)
+
+	return &csi.NodeGetVolumeStatsResponse{
+		Usage: []*csi.VolumeUsage{
+			{
+				Available: diskFree,
+				Total:     diskTotal,
+				Used:      diskTotal - diskFree,
+				Unit:      csi.VolumeUsage_BYTES,
+			},
+			{
+				Available: inodesFree,
+				Total:     inodesTotal,
+				Used:      inodesTotal - inodesFree,
+				Unit:      csi.VolumeUsage_INODES,
+			},
+		},
+	}, nil
 }
 
 func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
