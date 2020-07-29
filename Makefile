@@ -1,5 +1,7 @@
 GO111MODULE := on
-DOCKER_TAG := $(or $(subst .,-,$(subst _,-,$(GITHUB_TAG_NAME))), latest)
+DOCKER_TAG := $(or $(subst _,-,$(GITHUB_TAG_NAME)), latest)
+TEST_TAG := $(or $(subst .,-,$(subst _,-,$(GITHUB_TAG_NAME))), latest)
+
 
 all: provisioner lvmplugin
 
@@ -59,6 +61,6 @@ clean-test:
 .PHONY: metalci
 metalci: dockerimages dockerpush
 	@cp -R helm tests/files
-	docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests:${DOCKER_TAG} tests > /dev/null
-	docker run --rm csi-lvm-tests:${DOCKER_TAG} bats /bats
+	docker build --build-arg docker_tag=${TEST_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests:${TEST_TAG} tests > /dev/null
+	docker run --rm csi-lvm-tests:${TEST_TAG} bats /bats
 
