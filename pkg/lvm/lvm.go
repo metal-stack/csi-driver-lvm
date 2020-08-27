@@ -35,7 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -374,13 +374,13 @@ func createProvisionerPod(va volumeAction) (err error) {
 
 	// If it already exists due to some previous errors, the pod will be cleaned up later automatically
 	// https://github.com/rancher/local-path-provisioner/issues/27
-	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(provisionerPod)
+	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(context.Background(), provisionerPod, metav1.CreateOptions{})
 	if err != nil && !k8serror.IsAlreadyExists(err) {
 		return err
 	}
 
 	defer func() {
-		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(provisionerPod.Name, &metav1.DeleteOptions{})
+		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(context.Background(), provisionerPod.Name, metav1.DeleteOptions{})
 		if e != nil {
 			klog.Errorf("unable to delete the provisioner pod: %v", e)
 		}
@@ -389,7 +389,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 	completed := false
 	retrySeconds := 60
 	for i := 0; i < retrySeconds; i++ {
-		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(provisionerPod.Name, metav1.GetOptions{})
+		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(context.Background(), provisionerPod.Name, metav1.GetOptions{})
 		if pod.Status.Phase == v1.PodFailed {
 			// pod terminated in time, but with failure
 			// return ResourceExhausted so the requesting pod can be rescheduled to anonther node
