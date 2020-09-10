@@ -6,7 +6,7 @@ import (
 
 	lvm "github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"github.com/urfave/cli/v2"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 func createLVCmd() *cli.Command {

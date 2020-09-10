@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -180,7 +180,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 
 	volID := req.GetVolumeId()
 
-	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(volID, metav1.GetOptions{})
+	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(context.Background(), volID, metav1.GetOptions{})
 	if err != nil {
 		panic(err.Error())
 	}

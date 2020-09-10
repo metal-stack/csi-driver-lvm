@@ -10,12 +10,12 @@ lvm:
 
 pluginImage:
   repository: metalstack/lvmplugin
-  tag: v0.3.6
+  tag: v0.3.7
   pullPolicy: IfNotPresent
 
 provisionerImage:
   repository: metalstack/csi-lvmplugin-provisioner
-  tag: v0.3.6
+  tag: v0.3.7
   pullPolicy: IfNotPresent
 
 rbac:
