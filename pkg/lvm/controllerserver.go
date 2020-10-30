@@ -17,13 +17,17 @@ limitations under the License.
 package lvm
 
 import (
+	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	v1 "k8s.io/api/core/v1"
+	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -35,18 +39,21 @@ const (
 )
 
 type controllerServer struct {
-	caps             []*csi.ControllerServiceCapability
-	nodeID           string
-	devicesPattern   string
-	vgName           string
-	kubeClient       kubernetes.Clientset
-	provisionerImage string
-	pullPolicy       v1.PullPolicy
-	namespace        string
+	caps                        []*csi.ControllerServiceCapability
+	nodeID                      string
+	devicesPattern              string
+	vgName                      string
+	kubeClient                  kubernetes.Clientset
+	provisionerImage            string
+	pullPolicy                  v1.PullPolicy
+	namespace                   string
+	lvmTimeout                  int
+	snapshotTimeout             int
+	lvmSnapshotBufferPercentage int
 }
 
 // NewControllerServer
-func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) *controllerServer {
+func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy, lvmTimeout int, snapshotTimeout int, lvmSnapshotBufferPercentage int) *controllerServer {
 	if ephemeral {
 		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID}
 	}
@@ -64,19 +71,23 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 		caps: getControllerServiceCapabilities(
 			[]csi.ControllerServiceCapability_RPC_Type{
 				csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+				csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+				csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
+
 				// TODO
-				//				csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
-				//				csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
 				//				csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
 				//				csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 			}),
-		nodeID:           nodeID,
-		devicesPattern:   devicesPattern,
-		vgName:           vgName,
-		kubeClient:       *kubeClient,
-		namespace:        namespace,
-		provisionerImage: provisionerImage,
-		pullPolicy:       pullPolicy,
+		nodeID:                      nodeID,
+		devicesPattern:              devicesPattern,
+		vgName:                      vgName,
+		kubeClient:                  *kubeClient,
+		namespace:                   namespace,
+		provisionerImage:            provisionerImage,
+		pullPolicy:                  pullPolicy,
+		lvmTimeout:                  lvmTimeout,
+		snapshotTimeout:             snapshotTimeout,
+		lvmSnapshotBufferPercentage: lvmSnapshotBufferPercentage,
 	}
 }
 
@@ -138,21 +149,57 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	klog.Infof("creating volume %s on node: %s", req.GetName(), node)
 
 	va := volumeAction{
-		action:           actionTypeCreate,
-		name:             req.GetName(),
-		nodeName:         node,
-		size:             req.GetCapacityRange().GetRequiredBytes(),
-		lvmType:          lvmType,
-		devicesPattern:   cs.devicesPattern,
-		pullPolicy:       cs.pullPolicy,
-		provisionerImage: cs.provisionerImage,
-		kubeClient:       cs.kubeClient,
-		namespace:        cs.namespace,
-		vgName:           cs.vgName,
+		action:                      actionTypeCreate,
+		name:                        req.GetName(),
+		nodeName:                    node,
+		size:                        req.GetCapacityRange().GetRequiredBytes(),
+		lvmType:                     lvmType,
+		devicesPattern:              cs.devicesPattern,
+		pullPolicy:                  cs.pullPolicy,
+		provisionerImage:            cs.provisionerImage,
+		kubeClient:                  cs.kubeClient,
+		namespace:                   cs.namespace,
+		vgName:                      cs.vgName,
+		lvmSnapshotBufferPercentage: cs.lvmSnapshotBufferPercentage,
 	}
-	if err := createProvisionerPod(va); err != nil {
+	if err := createProvisionerPod(va, cs.lvmTimeout); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)
 		return nil, err
+	}
+
+	if req.GetVolumeContentSource() != nil {
+		volumeSource := req.VolumeContentSource
+		switch volumeSource.Type.(type) {
+		case *csi.VolumeContentSource_Snapshot:
+			if snapshot := volumeSource.GetSnapshot(); snapshot != nil {
+				s3, err := secretsToS3Parameter(req.Secrets)
+				klog.Infof("restore secrets: %v", req)
+				if err != nil {
+					return nil, err
+				}
+
+				va := volumeAction{
+					action:                      actionTypeRestoreSnapshot,
+					name:                        req.GetName(),
+					nodeName:                    node,
+					pullPolicy:                  cs.pullPolicy,
+					provisionerImage:            cs.provisionerImage,
+					kubeClient:                  cs.kubeClient,
+					namespace:                   cs.namespace,
+					vgName:                      cs.vgName,
+					snapshotName:                snapshot.GetSnapshotId(),
+					S3Parameter:                 s3,
+					lvmSnapshotBufferPercentage: cs.lvmSnapshotBufferPercentage,
+				}
+				if err := createProvisionerPod(va, cs.snapshotTimeout); err != nil {
+					klog.Errorf("error creating provisioner pod :%v", err)
+					return nil, err
+				}
+			}
+		default:
+			return nil, status.Errorf(codes.InvalidArgument, "%v not a proper volume source", volumeSource)
+		}
+		klog.Infof("successfully populated volume %s", req.GetName())
 	}
 
 	return &csi.CreateVolumeResponse{
@@ -187,6 +234,19 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 	ns := volume.Spec.NodeAffinity.Required.NodeSelectorTerms
 	node := ns[0].MatchExpressions[0].Values[0]
 
+	_, err = cs.kubeClient.CoreV1().Nodes().Get(context.Background(), node, metav1.GetOptions{})
+	if err != nil {
+
+		// TODO: DEBUG output, remove later
+		klog.Infof("not found %s", k8serror.IsNotFound(err))
+		klog.Infof("is gone %s", k8serror.IsGone(err))
+		klog.Infof("is invalid %s", k8serror.IsInvalid(err))
+		if k8serror.IsNotFound(err) || k8serror.IsGone(err) || k8serror.IsInvalid(err) {
+			klog.V(4).Infof("node %s not found. Assuming volume %s is gone.", node, volID)
+			return &csi.DeleteVolumeResponse{}, nil
+		}
+	}
+
 	klog.V(4).Infof("from node %s ", node)
 
 	va := volumeAction{
@@ -199,12 +259,12 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		namespace:        cs.namespace,
 		vgName:           cs.vgName,
 	}
-	if err := createProvisionerPod(va); err != nil {
+	if err := createProvisionerPod(va, cs.lvmTimeout); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)
 		return nil, err
 	}
 
-	klog.V(4).Infof("volume %v successfully deleted", volID)
+	klog.V(4).Infof("volume %s successfully deleted", volID)
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
@@ -293,15 +353,199 @@ func (cs *controllerServer) ListVolumes(ctx context.Context, req *csi.ListVolume
 }
 
 func (cs *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	if err := cs.validateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT); err != nil {
+		klog.V(3).Infof("invalid create snapshot req: %v", req)
+		return nil, err
+	}
+
+	if len(req.GetName()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Name missing in request")
+	}
+	// Check arguments
+	if len(req.GetSourceVolumeId()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "SourceVolumeId missing in request")
+	}
+
+	s3, err := secretsToS3Parameter(req.Secrets)
+	if err != nil {
+		return nil, err
+	}
+	// Need to check for already existing snapshot name, and if found check for the
+	// requested sourceVolumeId and sourceVolumeId of snapshot that has been created.
+	if snapshots, err := s3ListSnapshots(req.GetName(), req.GetSourceVolumeId(), s3); err == nil && len(snapshots) == 1 {
+		return &csi.CreateSnapshotResponse{
+			Snapshot: &csi.Snapshot{
+				SnapshotId:     req.GetName(),
+				SourceVolumeId: req.GetSourceVolumeId(),
+				CreationTime:   timestamppb.New(snapshots[0].Time),
+				SizeBytes:      snapshots[0].Size,
+				ReadyToUse:     true,
+			},
+		}, nil
+	}
+
+	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(context.Background(), req.GetSourceVolumeId(), metav1.GetOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+	ns := volume.Spec.NodeAffinity.Required.NodeSelectorTerms
+	node := ns[0].MatchExpressions[0].Values[0]
+
+	va := volumeAction{
+		action:                      actionTypeCreateSnapshot,
+		name:                        req.GetSourceVolumeId(),
+		snapshotName:                req.GetName(),
+		nodeName:                    node,
+		pullPolicy:                  cs.pullPolicy,
+		provisionerImage:            cs.provisionerImage,
+		kubeClient:                  cs.kubeClient,
+		namespace:                   cs.namespace,
+		vgName:                      cs.vgName,
+		size:                        int64(volume.Size()),
+		S3Parameter:                 s3,
+		lvmSnapshotBufferPercentage: cs.lvmSnapshotBufferPercentage,
+	}
+	if err := createProvisionerPod(va, cs.snapshotTimeout); err != nil {
+		klog.Errorf("error creating provisioner pod :%v", err)
+		return nil, err
+	}
+
+	snapshots, err := s3ListSnapshots(req.GetName(), req.GetSourceVolumeId(), s3)
+	if err == nil && len(snapshots) == 1 {
+		return &csi.CreateSnapshotResponse{
+			Snapshot: &csi.Snapshot{
+				SnapshotId:     req.GetName(),
+				SourceVolumeId: req.GetSourceVolumeId(),
+				CreationTime:   timestamppb.New(snapshots[0].Time),
+				SizeBytes:      snapshots[0].Size,
+				ReadyToUse:     true,
+			},
+		}, nil
+	}
+	klog.Errorf("snapshot %s not found in: %v", snapshots)
+
+	return nil, fmt.Errorf("failed to create snapshot %s from volume %s", req.GetName(), req.GetSourceVolumeId())
 }
 
 func (cs *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	// Check arguments
+	if len(req.GetSnapshotId()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Snapshot ID missing in request")
+	}
+
+	if err := cs.validateControllerServiceRequest(csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT); err != nil {
+		klog.Infof("invalid delete snapshot req: %v", req)
+		return nil, err
+	}
+	s3, err := secretsToS3Parameter(req.Secrets)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = DeleteS3Snapshot(req.GetSnapshotId(), s3)
+	return &csi.DeleteSnapshotResponse{}, err
 }
 
 func (cs *controllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
+	if err := cs.validateControllerServiceRequest(csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS); err != nil {
+		klog.Infof("invalid list snapshot req: %v", req)
+		return nil, err
+	}
+
+	s3, err := secretsToS3Parameter(req.Secrets)
+	if err != nil {
+		return nil, err
+	}
+
+	// case 1: SnapshotId is not empty, return snapshots that match the snapshot id.
+	if len(req.GetSnapshotId()) != 0 {
+		if snapshots, err := s3ListSnapshots(req.GetSnapshotId(), "", s3); err == nil && len(snapshots) == 1 {
+			return convertSnapshot(snapshots[0]), nil
+		}
+	}
+
+	// case 2: SourceVolumeId is not empty, return snapshots that match the source volume id.
+	if len(req.GetSourceVolumeId()) != 0 {
+		if snapshots, err := s3ListSnapshots("", req.GetSourceVolumeId(), s3); err == nil && len(snapshots) == 1 {
+			return convertSnapshot(snapshots[0]), nil
+		}
+	}
+
+	// case 3: no parameter is set, so we return all the snapshots.
+	var snapshots []csi.Snapshot
+	s3snapshots, err := s3ListSnapshots("", req.GetSourceVolumeId(), s3)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range s3snapshots {
+		snapshot := csi.Snapshot{
+			SnapshotId:     s.SnapshotName,
+			SourceVolumeId: s.VolumeName,
+			CreationTime:   timestamppb.New(s.Time),
+			SizeBytes:      s.Size,
+			ReadyToUse:     true,
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+
+	var (
+		ulenSnapshots = int32(len(snapshots))
+		maxEntries    = req.MaxEntries
+		startingToken int32
+	)
+
+	if v := req.StartingToken; v != "" {
+		i, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.Aborted,
+				"startingToken=%d !< int32=%d",
+				startingToken, math.MaxUint32)
+		}
+		startingToken = int32(i)
+	}
+
+	if startingToken > ulenSnapshots {
+		return nil, status.Errorf(
+			codes.Aborted,
+			"startingToken=%d > len(snapshots)=%d",
+			startingToken, ulenSnapshots)
+	}
+
+	// Discern the number of remaining entries.
+	rem := ulenSnapshots - startingToken
+
+	// If maxEntries is 0 or greater than the number of remaining entries then
+	// set maxEntries to the number of remaining entries.
+	if maxEntries == 0 || maxEntries > rem {
+		maxEntries = rem
+	}
+
+	var (
+		i       int
+		j       = startingToken
+		entries = make(
+			[]*csi.ListSnapshotsResponse_Entry,
+			maxEntries)
+	)
+
+	for i = 0; i < len(entries); i++ {
+		entries[i] = &csi.ListSnapshotsResponse_Entry{
+			Snapshot: &snapshots[j],
+		}
+		j++
+	}
+
+	var nextToken string
+	if j < ulenSnapshots {
+		nextToken = fmt.Sprintf("%d", j)
+	}
+
+	return &csi.ListSnapshotsResponse{
+		Entries:   entries,
+		NextToken: nextToken,
+	}, nil
 }
 
 func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
@@ -310,4 +554,24 @@ func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi
 
 func (cs *controllerServer) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
+}
+
+func convertSnapshot(s s3Snapshot) *csi.ListSnapshotsResponse {
+	entries := []*csi.ListSnapshotsResponse_Entry{
+		{
+			Snapshot: &csi.Snapshot{
+				SnapshotId:     s.SnapshotName,
+				SourceVolumeId: s.VolumeName,
+				CreationTime:   timestamppb.New(s.Time),
+				SizeBytes:      s.Size,
+				ReadyToUse:     true,
+			},
+		},
+	}
+
+	rsp := &csi.ListSnapshotsResponse{
+		Entries: entries,
+	}
+
+	return rsp
 }

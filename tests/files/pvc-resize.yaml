@@ -7,7 +7,7 @@ spec:
   accessModes:
     - ReadWriteOnce
   volumeMode: Block
-  storageClassName: PRTAG-csi-lvm-sc-linear
+  storageClassName: PRTAG-csi-lvm-linear
   resources:
     requests:
       storage: 20Mi
@@ -20,8 +20,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: PRTAG-csi-lvm-sc-linear
+  storageClassName: PRTAG-csi-lvm-linear
   resources:
     requests:
       storage: 20Mi
-

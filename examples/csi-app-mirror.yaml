@@ -13,4 +13,4 @@ spec:
   volumes:
     - name: my-csi-volume-mirror
       persistentVolumeClaim:
-        claimName: csi-pvc-mirror # defined in csi-pvs.yaml
+        claimName: csi-pvc-mirror

@@ -1,0 +1,56 @@
+{{- if .Values.compat03x }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-linear
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "linear"
+{{- if .Values.snapshots.enabled }}
+  csi.storage.k8s.io/secret-name: {{ .Values.snapshots.secret }}
+  csi.storage.k8s.io/secret-namespace: {{ .Release.Namespace }}
+{{- end }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-mirror
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: mirror
+{{- if .Values.snapshots.enabled }}
+  csi.storage.k8s.io/secret-name: {{ .Values.snapshots.secret }}
+  csi.storage.k8s.io/secret-namespace: {{ .Release.Namespace }}
+{{- end }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-striped
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "striped"
+{{- if .Values.snapshots.enabled }}
+  csi.storage.k8s.io/secret-name: {{ .Values.snapshots.secret }}
+  csi.storage.k8s.io/secret-namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

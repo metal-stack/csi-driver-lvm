@@ -1,0 +1,9 @@
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshot
+metadata:
+  name: test-snapshot
+  namespace: PRTAG
+spec:
+  volumeSnapshotClassName: PRTAG-csi-lvm-s3
+  source:
+    persistentVolumeClaimName: lvm-pvc-linear

@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1beta1
+kind: CSIDriver
+metadata:
+  name: {{ .Values.lvm.driverName }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  volumeLifecycleModes:
+  - Persistent
+  - Ephemeral
+  podInfoOnMount: true

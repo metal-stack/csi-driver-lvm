@@ -31,7 +31,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
@@ -47,17 +46,19 @@ const (
 
 // Lvm contains the main parameters
 type Lvm struct {
-	name              string
-	nodeID            string
-	version           string
-	endpoint          string
-	ephemeral         bool
-	maxVolumesPerNode int64
-	devicesPattern    string
-	vgName            string
-	provisionerImage  string
-	pullPolicy        v1.PullPolicy
-	namespace         string
+	name                        string
+	nodeID                      string
+	version                     string
+	endpoint                    string
+	ephemeral                   bool
+	devicesPattern              string
+	vgName                      string
+	provisionerImage            string
+	pullPolicy                  v1.PullPolicy
+	namespace                   string
+	lvmTimeout                  int
+	snapshotTimeout             int
+	lvmSnapshotBufferPercentage int
 
 	ids *identityServer
 	ns  *nodeServer
@@ -71,30 +72,36 @@ var (
 type actionType string
 
 type volumeAction struct {
-	action           actionType
-	name             string
-	nodeName         string
-	size             int64
-	lvmType          string
-	devicesPattern   string
-	provisionerImage string
-	pullPolicy       v1.PullPolicy
-	kubeClient       kubernetes.Clientset
-	namespace        string
-	vgName           string
+	action                      actionType
+	name                        string
+	nodeName                    string
+	size                        int64
+	lvmType                     string
+	devicesPattern              string
+	provisionerImage            string
+	pullPolicy                  v1.PullPolicy
+	kubeClient                  kubernetes.Clientset
+	namespace                   string
+	vgName                      string
+	snapshotName                string
+	S3Parameter                 S3Parameter
+	lvmSnapshotBufferPercentage int
 }
 
 const (
-	linearType       = "linear"
-	stripedType      = "striped"
-	mirrorType       = "mirror"
-	actionTypeCreate = "create"
-	actionTypeDelete = "delete"
-	pullIfNotPresent = "ifnotpresent"
+	linearType                = "linear"
+	stripedType               = "striped"
+	mirrorType                = "mirror"
+	actionTypeCreate          = "create"
+	actionTypeDelete          = "delete"
+	actionTypeCreateSnapshot  = "createsnapshot"
+	actionTypeRestoreSnapshot = "restoresnapshot"
+	pullAlways                = "always"
+	pullIfNotPresent          = "ifnotpresent"
 )
 
 // NewLvmDriver creates the driver
-func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*Lvm, error) {
+func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string, lvmTimeout int, snapshotTimeout int, lvmSnapshotBufferPercentage int) (*Lvm, error) {
 	if driverName == "" {
 		return nil, fmt.Errorf("no driver name provided")
 	}
@@ -120,17 +127,19 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 	klog.Infof("Version: %s", vendorVersion)
 
 	return &Lvm{
-		name:              driverName,
-		version:           vendorVersion,
-		nodeID:            nodeID,
-		endpoint:          endpoint,
-		ephemeral:         ephemeral,
-		maxVolumesPerNode: maxVolumesPerNode,
-		devicesPattern:    devicesPattern,
-		vgName:            vgName,
-		namespace:         namespace,
-		provisionerImage:  provisionerImage,
-		pullPolicy:        pp,
+		name:                        driverName,
+		version:                     vendorVersion,
+		nodeID:                      nodeID,
+		endpoint:                    endpoint,
+		ephemeral:                   ephemeral,
+		devicesPattern:              devicesPattern,
+		vgName:                      vgName,
+		namespace:                   namespace,
+		provisionerImage:            provisionerImage,
+		pullPolicy:                  pp,
+		lvmTimeout:                  lvmTimeout,
+		snapshotTimeout:             snapshotTimeout,
+		lvmSnapshotBufferPercentage: lvmSnapshotBufferPercentage,
 	}, nil
 }
 
@@ -138,8 +147,8 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 func (lvm *Lvm) Run() {
 	// Create GRPC servers
 	lvm.ids = newIdentityServer(lvm.name, lvm.version)
-	lvm.ns = newNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
-	lvm.cs = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
+	lvm.ns = newNodeServer(lvm.nodeID, lvm.ephemeral, lvm.devicesPattern, lvm.vgName)
+	lvm.cs = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy, lvm.lvmTimeout, lvm.snapshotTimeout, lvm.lvmSnapshotBufferPercentage)
 
 	s := newNonBlockingGRPCServer()
 	s.start(lvm.endpoint, lvm.ids, lvm.cs, lvm.ns)
@@ -230,7 +239,7 @@ func umountLV(targetPath string) (string, error) {
 	return "", nil
 }
 
-func createProvisionerPod(va volumeAction) (err error) {
+func createProvisionerPod(va volumeAction, retrySeconds int) (err error) {
 	if va.name == "" || va.nodeName == "" {
 		return fmt.Errorf("invalid empty name or path or node")
 	}
@@ -245,6 +254,13 @@ func createProvisionerPod(va volumeAction) (err error) {
 	if va.action == actionTypeDelete {
 		args = append(args, "deletelv")
 	}
+	if va.action == actionTypeCreateSnapshot {
+		args = append(args, "createsnapshot", "--snapshotname", va.snapshotName, "--s3parameter", EncodeS3Parameter(va.S3Parameter), "--lvsize", fmt.Sprintf("%d", va.size), "--lvmsnapshotbufferpercentage", fmt.Sprintf("%d", va.lvmSnapshotBufferPercentage))
+	}
+	if va.action == actionTypeRestoreSnapshot {
+		args = append(args, "restoresnapshot", "--snapshotname", va.snapshotName, "--s3parameter", EncodeS3Parameter(va.S3Parameter))
+	}
+
 	args = append(args, "--lvname", va.name, "--vgname", va.vgName)
 
 	klog.Infof("start provisionerPod with args:%s", args)
@@ -305,16 +321,6 @@ func createProvisionerPod(va volumeAction) (err error) {
 					SecurityContext: &v1.SecurityContext{
 						Privileged: &privileged,
 					},
-					Resources: v1.ResourceRequirements{
-						Requests: v1.ResourceList{
-							"cpu":    resource.MustParse("50m"),
-							"memory": resource.MustParse("50Mi"),
-						},
-						Limits: v1.ResourceList{
-							"cpu":    resource.MustParse("100m"),
-							"memory": resource.MustParse("100Mi"),
-						},
-					},
 				},
 			},
 			Volumes: []v1.Volume{
@@ -374,39 +380,43 @@ func createProvisionerPod(va volumeAction) (err error) {
 		return err
 	}
 
-	defer func() {
-		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(context.Background(), provisionerPod.Name, metav1.DeleteOptions{})
-		if e != nil {
-			klog.Errorf("unable to delete the provisioner pod: %v", e)
-		}
-	}()
-
 	completed := false
-	retrySeconds := 60
+	reason := fmt.Errorf("create process %s timeout after %v seconds", provisionerPod.Name, retrySeconds)
 	for i := 0; i < retrySeconds; i++ {
+		time.Sleep(1 * time.Second)
 		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(context.Background(), provisionerPod.Name, metav1.GetOptions{})
 		if pod.Status.Phase == v1.PodFailed {
 			// pod terminated in time, but with failure
 			// return ResourceExhausted so the requesting pod can be rescheduled to anonther node
 			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
-			klog.Info("provisioner pod terminated with failure")
-			return status.Error(codes.ResourceExhausted, "volume creation failed")
+			klog.Infof("provisioner pod %s terminated with failure", provisionerPod.Name)
+			reason = status.Errorf(codes.ResourceExhausted, "provisioner pod %s terminated with failure", provisionerPod.Name)
+			break
 		}
 		if err != nil {
-			klog.Errorf("error reading provisioner pod:%v", err)
+			if k8serror.IsNotFound(err) {
+				klog.Infof("provisioner pod %s is already gone", provisionerPod.Name)
+				return nil
+			}
+			klog.Errorf("error reading provisioner pod %s:%v", provisionerPod.Name, err)
 		} else if pod.Status.Phase == v1.PodSucceeded {
-			klog.Info("provisioner pod terminated successfully")
+			klog.Infof("provisioner pod %s terminated successfully", provisionerPod.Name)
 			completed = true
 			break
 		}
-		klog.Infof("provisioner pod status:%s", pod.Status.Phase)
-		time.Sleep(1 * time.Second)
-	}
-	if !completed {
-		return fmt.Errorf("create process timeout after %v seconds", retrySeconds)
+		klog.Infof("provisioner pod %s status:%s", provisionerPod.Name, pod.Status.Phase)
 	}
 
-	klog.Infof("Volume %v has been %vd on %v", va.name, va.action, va.nodeName)
+	e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(context.Background(), provisionerPod.Name, metav1.DeleteOptions{})
+	if e != nil {
+		klog.Errorf("unable to delete the provisioner pod %s: %v", provisionerPod.Name, e)
+	}
+
+	if !completed {
+		return reason
+	}
+
+	klog.Infof("%s for volume %s on %v was successful", va.action, va.name, va.nodeName)
 	return nil
 }
 
@@ -573,7 +583,8 @@ func extendLVS(ctx context.Context, vg string, name string, size uint64, isBlock
 func RemoveLVS(ctx context.Context, vg string, name string) (string, error) {
 
 	if !lvExists(vg, name) {
-		return "", fmt.Errorf("logical volume %s does not exist", name)
+		// volume not found. Has already been deleted or
+		return fmt.Sprintf("logical volume %s not found in volumegroup %s.", name, vg), nil
 	}
 	args := []string{"-q", "-y"}
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
@@ -595,4 +606,44 @@ func pvCount(vgname string) (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// CreateLVMSnapshot creates a lvm snapshot of a given lvm volume
+func CreateLVMSnapshot(vg string, lvname string, snapshotname string, size uint64) (string, error) {
+	if !vgExists(vg) {
+		return "", fmt.Errorf("volume group %s does not exist", vg)
+	}
+	if !lvExists(vg, lvname) {
+		return "", fmt.Errorf("logical volume %s does not exist", lvname)
+	}
+	if lvExists(vg, snapshotname) {
+		return "", fmt.Errorf("logical snapshot volume %s aleardy exists", snapshotname)
+	}
+
+	// lvm: Names starting "snapshot" are reserved.
+	// for very small volumes, calculated snapshot size might be too low, so we add 10000 sectors a 512 bytes (=5mb) as minimun reserve
+	args := []string{"-q", "-s", fmt.Sprintf("%s/%s", vg, lvname), "-n", snapshotname, "-y", "-L", fmt.Sprintf("%ds", int64(float64(size)/512)+10000)}
+
+	klog.Infof("lvcreate %s", args)
+	cmd := exec.Command("lvcreate", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// DeleteLVMSnapshot deletes a lvm snapshot volume
+func DeleteLVMSnapshot(vg string, snapshotname string) (string, error) {
+	if !vgExists(vg) {
+		return "", fmt.Errorf("volume group %s does not exist", vg)
+	}
+	if !lvExists(vg, snapshotname) {
+		return "", fmt.Errorf("logical snapshot volume %s does not exist", snapshotname)
+	}
+
+	args := []string{"-q", "-y"}
+	args = append(args, fmt.Sprintf("%s/%s", vg, snapshotname))
+	klog.Infof("lvremove %s", args)
+
+	cmd := exec.Command("lvremove", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }

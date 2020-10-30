@@ -19,11 +19,13 @@ require (
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	google.golang.org/genproto v0.0.0-20201106154455-f9bfe239b0ba // indirect
 	google.golang.org/grpc v1.33.2
+	google.golang.org/appengine v1.6.6 // indirect
+	google.golang.org/protobuf v1.25.0
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 	k8s.io/api v0.19.3
 	k8s.io/apimachinery v0.19.3
 	k8s.io/client-go v0.19.0
 	k8s.io/klog/v2 v2.4.0
 	k8s.io/utils v0.0.0-20201104234853-8146046b121e // indirect
-
 )

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-pvc-linear
+  namespace: PRTAG
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Mi
+  storageClassName: PRTAG-csi-lvm-linear
+  dataSource:
+    name: test-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io

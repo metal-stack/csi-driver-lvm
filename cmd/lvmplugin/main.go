@@ -34,17 +34,19 @@ func init() {
 }
 
 var (
-	endpoint          = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
-	driverName        = flag.String("drivername", "lvm.csi.k8s.io", "name of the driver")
-	nodeID            = flag.String("nodeid", "", "node id")
-	ephemeral         = flag.Bool("ephemeral", false, "publish volumes in ephemeral mode even if kubelet did not ask for it (only needed for Kubernetes 1.15)")
-	maxVolumesPerNode = flag.Int64("maxvolumespernode", 0, "limit of volumes per node")
-	showVersion       = flag.Bool("version", false, "Show version.")
-	devicesPattern    = flag.String("devices", "", "comma-separated grok patterns of the physical volumes to use.")
-	vgName            = flag.String("vgname", "csi-lvm", "name of volume group")
-	namespace         = flag.String("namespace", "csi-lvm", "name of namespace")
-	provisionerImage  = flag.String("provisionerimage", "metalstack/csi-lvmplugin-provisioner", "name of provisioner image")
-	pullPolicy        = flag.String("pullpolicy", "ifnotpresent", "pull policy for provisioner image")
+	endpoint                    = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
+	driverName                  = flag.String("drivername", "lvm.csi.metal-stack.io", "name of the driver")
+	nodeID                      = flag.String("nodeid", "", "node id")
+	ephemeral                   = flag.Bool("ephemeral", false, "publish volumes in ephemeral mode even if kubelet did not ask for it (only needed for Kubernetes 1.15)")
+	showVersion                 = flag.Bool("version", false, "Show version.")
+	devicesPattern              = flag.String("devices", "", "comma-separated grok patterns of the physical volumes to use.")
+	vgName                      = flag.String("vgname", "csi-lvm", "name of volume group")
+	namespace                   = flag.String("namespace", "csi-lvm", "name of namespace")
+	provisionerImage            = flag.String("provisionerimage", "metalstack/csi-lvmplugin-provisioner", "name of provisioner image")
+	pullPolicy                  = flag.String("pullpolicy", "ifnotpresent", "pull policy for provisioner image")
+	lvmTimeout                  = flag.Int("lvm-timeout", 60, "timeout for lvm provisioner operations (lvcreate/lvremove)")
+	snapshotTimeout             = flag.Int("snapshot-timeout", 3600, "timeout for snapshot provisioner operations (snapshot create/restore")
+	lvmSnapshotBufferPercentage = flag.Int("lvm-snapshot-buffer-percentage", 10, "amount (in percent) for lvm snapshots during snapshot creation")
 
 	// Set by the build process
 	version = ""
@@ -68,7 +70,7 @@ func main() {
 }
 
 func handle() {
-	driver, err := lvm.NewLvmDriver(*driverName, *nodeID, *endpoint, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName, *namespace, *provisionerImage, *pullPolicy)
+	driver, err := lvm.NewLvmDriver(*driverName, *nodeID, *endpoint, *ephemeral, version, *devicesPattern, *vgName, *namespace, *provisionerImage, *pullPolicy, *lvmTimeout, *snapshotTimeout, *lvmSnapshotBufferPercentage)
 	if err != nil {
 		fmt.Printf("Failed to initialize driver: %s", err.Error())
 		os.Exit(1)

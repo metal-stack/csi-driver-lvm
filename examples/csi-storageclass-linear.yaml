@@ -1,8 +1,8 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: csi-lvm-sc-linear
-provisioner: lvm.csi.k8s.io
+  name: csi-driver-lvm-linear
+provisioner: lvm.csi.metal-stack.io
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true

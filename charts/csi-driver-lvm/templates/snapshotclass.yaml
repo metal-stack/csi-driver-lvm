@@ -1,0 +1,31 @@
+{{- if .Values.snapshots.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.snapshots.secret }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+stringData:
+  s3_endpoint: {{ .Values.snapshots.s3Endpoint }}
+  s3_access_key: {{ .Values.snapshots.s3AccessKey }}
+  s3_secret_key: {{ .Values.snapshots.s3SecretKey }}
+  s3_bucket_name: {{ .Values.snapshots.s3BucketName }}
+  encryption_passphrase: {{ .Values.snapshots.encryptionPassphrase }}
+
+---
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshotClass
+metadata:
+  name: {{ .Values.lvm.storageClassStub }}-s3
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+driver: {{ .Values.lvm.driverName }}
+deletionPolicy: Delete
+parameters:
+  csi.storage.k8s.io/snapshotter-secret-name: {{ .Values.snapshots.secret }}
+  csi.storage.k8s.io/snapshotter-secret-namespace:  {{ .Release.Namespace }}
+  csi.storage.k8s.io/snapshotter-list-secret-name: {{ .Values.snapshots.secret }}
+  csi.storage.k8s.io/snapshotter-list-secret-namespace:  {{ .Release.Namespace }}
+{{- end }}

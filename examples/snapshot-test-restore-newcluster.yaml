@@ -1,0 +1,62 @@
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshotContent
+metadata:
+  annotations:
+    snapshot.storage.kubernetes.io/deletion-secret-name: csi-driver-lvm-s3-snapshot-params
+    snapshot.storage.kubernetes.io/deletion-secret-namespace: csi-driver-lvm
+  name: manual-snapshotcontent
+spec:
+  deletionPolicy: Delete
+  driver: lvm.csi.metal-stack.io
+  volumeSnapshotClassName: csi-driver-lvm-s3
+  volumeSnapshotRef:
+    apiVersion: snapshot.storage.k8s.io/v1beta1
+    kind: VolumeSnapshot
+    name: new-snapshot-demo
+    namespace: default
+  source:
+    # REPLACE THIS WITH THE EXISTING SNAPSHOT-CONTENT-NAME FROM YOUR OLD CLUSTER (kubectl get volumesnapshotcontents)
+    snapshotHandle: snapcontent-4e96deac-3749-4895-9ca4-798073ff4748
+---
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshot
+metadata:
+  name: new-snapshot-demo
+  namespace: default
+spec:
+  source:
+    volumeSnapshotContentName: manual-snapshotcontent
+  volumeSnapshotClassName: csi-driver-lvm-s3
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: csi-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: csi-driver-lvm-linear
+  dataSource:
+    name: new-snapshot-demo
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
+---
+kind: Pod
+apiVersion: v1
+metadata:
+  name: my-csi-app
+spec:
+  containers:
+    - name: my-frontend
+      image: busybox
+      volumeMounts:
+      - mountPath: "/data"
+        name: my-csi-volume
+      command: [ "sleep", "1000000" ]
+  volumes:
+    - name: my-csi-volume
+      persistentVolumeClaim:
+        claimName: csi-pvc

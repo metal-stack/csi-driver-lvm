@@ -38,12 +38,11 @@ const topologyKeyNode = "topology.lvm.csi/node"
 type nodeServer struct {
 	nodeID            string
 	ephemeral         bool
-	maxVolumesPerNode int64
 	devicesPattern    string
 	vgName            string
 }
 
-func newNodeServer(nodeID string, ephemeral bool, maxVolumesPerNode int64, devicesPattern string, vgName string) *nodeServer {
+func newNodeServer(nodeID string, ephemeral bool,  devicesPattern string, vgName string) *nodeServer {
 
 	// revive existing volumes at start of node server
 	vgexists := vgExists(vgName)
@@ -61,7 +60,6 @@ func newNodeServer(nodeID string, ephemeral bool, maxVolumesPerNode int64, devic
 	return &nodeServer{
 		nodeID:            nodeID,
 		ephemeral:         ephemeral,
-		maxVolumesPerNode: maxVolumesPerNode,
 		devicesPattern:    devicesPattern,
 		vgName:            vgName,
 	}
@@ -226,7 +224,6 @@ func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoReque
 
 	return &csi.NodeGetInfoResponse{
 		NodeId:             ns.nodeID,
-		MaxVolumesPerNode:  ns.maxVolumesPerNode,
 		AccessibleTopology: topology,
 	}, nil
 }

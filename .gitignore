@@ -1,1 +1,4 @@
-/bin
+bin
+tests/files/.dockerenv
+tests/files/.kubeconfig
+tests/files/charts

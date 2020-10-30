@@ -8,4 +8,4 @@ spec:
   resources:
     requests:
       storage: 100Mi
-  storageClassName: csi-lvm-sc-mirror # defined in csi-setup.yaml
+  storageClassName: csi-driver-lvm-mirror
