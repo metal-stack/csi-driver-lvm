@@ -13,7 +13,6 @@ const (
 	flagLVSize         = "lvsize"
 	flagVGName         = "vgname"
 	flagDevicesPattern = "devices"
-	flagDirectory      = "directory"
 	flagLVMType        = "lvmtype"
 )
 

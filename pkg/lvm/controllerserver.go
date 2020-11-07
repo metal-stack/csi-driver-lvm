@@ -31,7 +31,6 @@ import (
 )
 
 const (
-	deviceID           = "deviceID"
 	maxStorageCapacity = tib
 )
 

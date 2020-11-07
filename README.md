@@ -6,8 +6,7 @@ It automatically creates hostPath based persistent volumes on the nodes.
 
 Underneath it creates a LVM logical volume on the local disks. A comma-separated list of grok pattern, which disks to use must be specified.
 
-This CSI driver is derived from https://github.com/kubernetes-csi/csi-driver-host-path and https://github.com/metal-stack/csi-lvm 
-
+This CSI driver is derived from [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) and [csi-lvm](https://github.com/metal-stack/csi-lvm )
 
 **BETA VERSION - use at own risk**
 
@@ -15,7 +14,7 @@ This CSI driver is derived from https://github.com/kubernetes-csi/csi-driver-hos
 
 For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
 
-### Installation ###
+## Installation ##
 
 You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
 
