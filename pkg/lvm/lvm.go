@@ -39,12 +39,10 @@ import (
 )
 
 const (
-	kib    int64 = 1024
-	mib    int64 = kib * 1024
-	gib    int64 = mib * 1024
-	gib100 int64 = gib * 100
-	tib    int64 = gib * 1024
-	tib100 int64 = tib * 100
+	kib int64 = 1024
+	mib int64 = kib * 1024
+	gib int64 = mib * 1024
+	tib int64 = gib * 1024
 )
 
 // Lvm contains the main parameters
@@ -87,14 +85,11 @@ type volumeAction struct {
 }
 
 const (
-	keyNode          = "kubernetes.io/hostname"
-	typeAnnotation   = "csi-lvm.metal-stack.io/type"
 	linearType       = "linear"
 	stripedType      = "striped"
 	mirrorType       = "mirror"
 	actionTypeCreate = "create"
 	actionTypeDelete = "delete"
-	pullAlways       = "always"
 	pullIfNotPresent = "ifnotpresent"
 )
 
