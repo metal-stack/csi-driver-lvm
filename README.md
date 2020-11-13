@@ -13,11 +13,8 @@ This CSI driver is derived from [csi-driver-host-path](https://github.com/kubern
 
 For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
 
-<<<<<<< HEAD
-=======
 For usage of S3-backed volumeSnapshots, see [SNAPSHOTS.md](SNAPSHOTS.md)
 
->>>>>>> 8445852... rework readme and examples
 ## Installation ##
 
 You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
