@@ -396,7 +396,8 @@ func createProvisionerPod(va volumeAction, retrySeconds int) (err error) {
 		if err != nil {
 			if k8serror.IsNotFound(err) {
 				klog.Infof("provisioner pod %s is already gone", provisionerPod.Name)
-				return nil
+				reason = status.Errorf(codes.ResourceExhausted, "provisioner pod %s disappeared", provisionerPod.Name)
+				break
 			}
 			klog.Errorf("error reading provisioner pod %s:%v", provisionerPod.Name, err)
 		} else if pod.Status.Phase == v1.PodSucceeded {

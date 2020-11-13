@@ -236,13 +236,8 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 
 	_, err = cs.kubeClient.CoreV1().Nodes().Get(context.Background(), node, metav1.GetOptions{})
 	if err != nil {
-
-		// TODO: DEBUG output, remove later
-		klog.Infof("not found %s", k8serror.IsNotFound(err))
-		klog.Infof("is gone %s", k8serror.IsGone(err))
-		klog.Infof("is invalid %s", k8serror.IsInvalid(err))
-		if k8serror.IsNotFound(err) || k8serror.IsGone(err) || k8serror.IsInvalid(err) {
-			klog.V(4).Infof("node %s not found. Assuming volume %s is gone.", node, volID)
+		if k8serror.IsNotFound(err) {
+			klog.Infof("node %s not found anymore. Assuming volume %s is gone for good.", node, volID)
 			return &csi.DeleteVolumeResponse{}, nil
 		}
 	}
