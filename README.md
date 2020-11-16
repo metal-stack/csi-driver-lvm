@@ -8,7 +8,6 @@ Underneath it creates a LVM logical volume on the local disks. A comma-separated
 
 This CSI driver is derived from [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) and [csi-lvm](https://github.com/metal-stack/csi-lvm )
 
-
 **Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm**
 
 For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
@@ -20,7 +19,7 @@ For usage of S3-backed volumeSnapshots, see [SNAPSHOTS.md](SNAPSHOTS.md)
 You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
 
 ```bash
-helm install csi-driver-lvm csi-driver-lvm -n csi-driver-lvm --repo https://metal-stack.github.io/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
+helm install csi-driver-lvm csi-driver-lvm -n csi-driver-lvm --repo https://helm.metal-stack.io/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
 ```
 
 Now you can use one of following storageClasses:
