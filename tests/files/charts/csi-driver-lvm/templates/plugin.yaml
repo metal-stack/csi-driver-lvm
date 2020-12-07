@@ -1,36 +1,145 @@
-kind: Service
+---
 apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: csi-lvmplugin
+  name: csi-driver-lvm-plugin
   labels:
-    app: csi-lvmplugin
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-driver-lvm-plugin
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "update", "patch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims/status"]
+    verbs: ["update", "patch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list", "get", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-driver-lvm-plugin
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+subjects:
+  - kind: ServiceAccount
+    name: csi-driver-lvm-plugin
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: csi-driver-lvm-plugin
+  apiGroup: rbac.authorization.k8s.io
+---
+{{- if .Values.rbac.pspEnabled }}
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: csi-driver-lvm-plugin
+  labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
 spec:
-  selector:
-    app: csi-lvmplugin
-  ports:
-    - name: dummy
-      port: 12345
+  allowedHostPaths:
+  - pathPrefix: /lib/modules
+  - pathPrefix: /etc/lvm/cache
+  - pathPrefix: /var/lib/kubelet/plugins/{{ .Values.lvm.storageClassStub }}
+  - pathPrefix: /etc/lvm/backup
+  - pathPrefix: /run/lock/lvm
+  - pathPrefix: /var/lib/kubelet/plugins
+  - pathPrefix: /var/lib/kubelet/plugins_registry
+  - pathPrefix: /dev
+  - pathPrefix: /var/lib/kubelet/pods
+  fsGroup:
+    rule: RunAsAny
+  hostPorts:
+  - max: 0
+    min: 0
+  privileged: true
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes:
+  - secret
+  - hostPath
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: csi-driver-lvm-plugin
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+rules:
+- apiGroups:
+  - policy
+  resourceNames:
+  - csi-driver-lvm-plugin
+  resources:
+  - podsecuritypolicies
+  verbs:
+  - use
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: csi-driver-lvm-plugin
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: csi-driver-lvm-plugin
+subjects:
+- kind: ServiceAccount
+  name: csi-driver-lvm-plugin
+  namespace: {{ .Release.Namespace }}
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: csi-lvmplugin
+  name: csi-driver-lvm-plugin
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
 spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: csi-lvmplugin
+      app: csi-driver-lvm-plugin
   template:
     metadata:
-      creationTimestamp: null
       labels:
-        app: csi-lvmplugin
+        app: csi-driver-lvm-plugin
     spec:
-      serviceAccountName: csi-lvmplugin
+      serviceAccountName: csi-driver-lvm-plugin
       containers:
-      - args:
+      - name: node-driver-registrar
+        args:
         - --v=5
         - --csi-address=/csi/csi.sock
         - --kubelet-registration-path=/var/lib/kubelet/plugins/{{ .Values.lvm.storageClassStub }}/csi.sock
@@ -40,7 +149,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        image: quay.io/k8scsi/csi-node-driver-registrar:v1.3.0
+        image: {{ .Values.externalImages.csiNodeDriverRegistrar }}
         imagePullPolicy: IfNotPresent
         name: node-driver-registrar
         resources: {}
@@ -53,33 +162,22 @@ spec:
           name: socket-dir
         - mountPath: /registration
           name: registration-dir
-      - args:
+      - name: csi-driver-lvm-plugin
+        args:
         - --drivername={{ .Values.lvm.driverName }}
-        - --endpoint=$(CSI_ENDPOINT)
-        - --devices=$(CSI_DEVICESPATTERN)
+        - --endpoint=unix:///csi/csi.sock
+        - --devices={{ .Values.lvm.devicePattern }}
         - --nodeid=$(KUBE_NODE_NAME)
-        - --vgname=$(CSI_VGNAME)
-        - --namespace=$(CSI_NAMESPACE)
-        - --provisionerimage=$(CSI_PROVISIONER_IMAGE)
-        - --pullpolicy=$(CSI_PULL_POLICY)
+        - --vgname={{ .Values.lvm.vgName }}
+        - --namespace={{ .Release.Namespace }}
+        - --provisionerimage={{ .Values.provisionerImage.repository }}:{{ .Values.provisionerImage.tag }}
+        - --pullpolicy={{ .Values.provisionerImage.pullPolicy }}
         env:
-        - name: CSI_ENDPOINT
-          value: unix:///csi/csi.sock
         - name: KUBE_NODE_NAME
           valueFrom:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        - name: CSI_DEVICESPATTERN
-          value: {{ .Values.lvm.devicePattern }}
-        - name: CSI_VGNAME
-          value: {{ .Values.lvm.vgName }}
-        - name: CSI_NAMESPACE
-          value: {{ .Release.Namespace }}
-        - name: CSI_PROVISIONER_IMAGE
-          value: "{{ .Values.provisionerImage.repository }}:{{ .Values.provisionerImage.tag }}"
-        - name: CSI_PULL_POLICY
-          value: {{ .Values.provisionerImage.pullPolicy }}
         image: "{{ .Values.pluginImage.repository }}:{{ .Values.pluginImage.tag }}"
         imagePullPolicy: {{ .Values.pluginImage.pullPolicy }}
         livenessProbe:
@@ -92,7 +190,6 @@ spec:
           periodSeconds: 2
           successThreshold: 1
           timeoutSeconds: 3
-        name: lvm
         ports:
         - containerPort: 9898
           name: healthz
@@ -125,12 +222,12 @@ spec:
         - mountPath: /run/lock/lvm
           name: lvmlock
           mountPropagation: Bidirectional
-      - args:
+      - name: liveness-probe
+        args:
         - --csi-address=/csi/csi.sock
         - --health-port=9898
-        image: quay.io/k8scsi/livenessprobe:v1.1.0
+        image: {{ .Values.externalImages.csiLivenessprobe }}
         imagePullPolicy: IfNotPresent
-        name: liveness-probe
         resources: {}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
@@ -179,3 +276,4 @@ spec:
           path: /run/lock/lvm
           type: DirectoryOrCreate
         name: lvmlock
+---

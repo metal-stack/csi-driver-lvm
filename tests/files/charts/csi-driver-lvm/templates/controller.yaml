@@ -1,0 +1,189 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "update", "patch", "create", "delete"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csinodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims/status"]
+    verbs: ["update", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csinodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+subjects:
+  - kind: ServiceAccount
+    name: csi-driver-lvm-controller
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: csi-driver-lvm-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+{{- if .Values.rbac.pspEnabled }}
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  allowedHostPaths:
+  - pathPrefix: /var/lib/kubelet/plugins/{{ .Values.lvm.storageClassStub }}
+  fsGroup:
+    rule: RunAsAny
+  privileged: true
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes:
+  - secret
+  - hostPath
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+rules:
+- apiGroups:
+  - policy
+  resourceNames:
+  - csi-driver-lvm-controller
+  resources:
+  - podsecuritypolicies
+  verbs:
+  - use
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: csi-driver-lvm-controller
+subjects:
+- kind: ServiceAccount
+  name: csi-driver-lvm-controller
+  namespace: {{ .Release.Namespace }}
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  serviceName: csi-driver-lvm-controller
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-driver-lvm-controller
+  template:
+    metadata:
+      labels:
+        app: csi-driver-lvm-controller
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - csi-driver-lvm-plugin
+            topologyKey: kubernetes.io/hostname
+      serviceAccountName: csi-driver-lvm-controller
+      containers:
+        - name: csi-attacher
+          image: {{ .Values.externalImages.csiAttacher }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - --v=5
+            - --csi-address=/csi/csi.sock
+          securityContext:
+            privileged: true
+          volumeMounts:
+          - mountPath: /csi
+            name: socket-dir
+        - name: csi-provisioner
+          image: {{ .Values.externalImages.csiProvisioner }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - -v=5
+            - --csi-address=/csi/csi.sock
+            - --feature-gates=Topology=true
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+        - name: csi-resizer
+          image: {{ .Values.externalImages.csiResizer }}
+          imagePullPolicy: IfNotPresent
+          args:
+            - -v=5
+            - -csi-address=/csi/csi.sock
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /csi
+              name: socket-dir
+      volumes:
+        - hostPath:
+            path: /var/lib/kubelet/plugins/{{ .Values.lvm.storageClassStub }}
+            type: DirectoryOrCreate
+          name: socket-dir
+---

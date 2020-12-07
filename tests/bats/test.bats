@@ -5,10 +5,10 @@
     [ "$status" -eq 0 ]
 }
 
-@test "deploy csi-lvm-controller" {
+@test "deploy csi-driver-lvm-controller" {
     run helm uninstall ${DOCKER_TAG} -n ${DOCKER_TAG}
     run kubectl create ns ${DOCKER_TAG}
-    run helm install ${DOCKER_TAG} --wait /files/helm/csi-driver-lvm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}" --set pluginImage.pullPolicy=${PULL_POLICY} --set provisionerImage.pullPolicy=${PULL_POLICY} --set lvm.driverName="${DOCKER_TAG}.lvm.csi.metal-stack.io" --set lvm.storageClassStub="${DOCKER_TAG}-csi-lvm" -n ${DOCKER_TAG}
+    run helm install ${DOCKER_TAG} --wait /files/charts/csi-driver-lvm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}" --set pluginImage.pullPolicy=${PULL_POLICY} --set provisionerImage.pullPolicy=${PULL_POLICY} --set lvm.driverName="${DOCKER_TAG}.lvm.csi.metal-stack.io" --set lvm.storageClassStub="${DOCKER_TAG}-csi-lvm" -n ${DOCKER_TAG}
     [ "$status" -eq 0 ]
 }
 
@@ -24,6 +24,12 @@
     run kubectl get -n ${DOCKER_TAG} pods volume-test-inline -o jsonpath="{.metadata.name},{.status.phase}"
     [ "$status" -eq 0 ]
     [ "$output" = "volume-test-inline,Running" ]
+}
+
+@test "delete inline linear pod" {
+    run kubectl delete -f /files/inline.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod \"volume-test-inline\" deleted" ]
 }
 
 @test "create pvc" {
@@ -110,6 +116,7 @@
     [ "${lines[1]}" = "persistentvolumeclaim \"lvm-pvc-linear\" deleted" ]
 }
 @test "clean up " {
+    run sleep 30
     run helm uninstall ${DOCKER_TAG} -n ${DOCKER_TAG}
     run sleep 30
     run kubectl delete ns ${DOCKER_TAG}
