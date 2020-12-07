@@ -21,3 +21,6 @@ provisionerImage:
 rbac:
   create: true
   pspEnabled: true
+
+kubernetes:
+  kubeletPath: /var/lib/kubelet
