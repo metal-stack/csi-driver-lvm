@@ -100,7 +100,7 @@ spec:
       creationTimestamp: null
       name: storage
     spec:
-      storageClassName: csi-lvm-sc-mirror
+      storageClassName: csi-driver-lvm-mirror
       accessModes:
       - ReadWriteOnce
       resources:

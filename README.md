@@ -17,14 +17,22 @@ For the special case of block volumes, the filesystem-expansion has to be perfom
 You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
 
 ```bash
-helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
+helm install csi-driver-lvm csi-driver-lvm -n csi-driver-lvm --repo https://helm.metal-stack.io/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
 ```
 
 Now you can use one of following storageClasses:
 
-* `csi-lvm-sc-mirror`
-* `csi-lvm-sc-linear`
-* `csi-lvm-sc-striped`
+* `csi-driver-lvm-mirror`
+* `csi-driver-lvm-linear`
+* `csi-driver-lvm-striped`
+
+## Upgrading an existing release to a new version ##
+
+### From 0.3.x to 0.4.x ###
+
+***The default storageclass names installed by the helm chart have changed from csi-lvm-sc-linear to csi-driver-lvm-linear***
+
+To additionally install the old storageclass names, use `--set compat03x=true`
 
 ### Todo ###
 

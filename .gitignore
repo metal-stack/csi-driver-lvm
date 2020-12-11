@@ -1,1 +1,3 @@
-/bin
+bin
+tests/files/.dockerenv
+tests/files/.kubeconfig

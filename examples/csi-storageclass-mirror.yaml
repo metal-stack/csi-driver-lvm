@@ -1,7 +1,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: csi-lvm-sc-mirror
+  name: csi-driver-lvm-mirror
 provisioner: lvm.csi.k8s.io
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
