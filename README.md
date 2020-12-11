@@ -8,9 +8,7 @@ Underneath it creates a LVM logical volume on the local disks. A comma-separated
 
 This CSI driver is derived from [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) and [csi-lvm](https://github.com/metal-stack/csi-lvm )
 
-**BETA VERSION - use at own risk**
-
-**Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm**
+## Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm ##
 
 For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
 
