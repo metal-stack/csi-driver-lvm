@@ -6,7 +6,7 @@ It automatically creates hostPath based persistent volumes on the nodes.
 
 Underneath it creates a LVM logical volume on the local disks. A comma-separated list of grok pattern, which disks to use must be specified.
 
-This CSI driver is derived from [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) and [csi-lvm](https://github.com/metal-stack/csi-lvm )
+This CSI driver is derived from [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) and [csi-lvm](https://github.com/metal-stack/csi-lvm)
 
 ## Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm ##
 
