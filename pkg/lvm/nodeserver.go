@@ -269,8 +269,8 @@ func (ns *nodeServer) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVol
 		return nil, err
 	}
 
-	diskFree := int64(fs.Bfree) * fs.Bsize
-	diskTotal := int64(fs.Blocks) * fs.Bsize
+	diskFree := int64(fs.Bfree) * int64(fs.Bsize)
+	diskTotal := int64(fs.Blocks) * int64(fs.Bsize)
 
 	inodesFree := int64(fs.Ffree)
 	inodesTotal := int64(fs.Files)
