@@ -14,8 +14,12 @@ jobs:
     - uses: actions/checkout@v1
     - uses: olegtarasov/get-tag@v1
       id: tagName
+    - uses: docker/setup-qemu-action@v1
+    - uses: docker/setup-buildx-action@v1
+      id: buildx
+      with:
+        install: true
     - name: Build the Docker images
       run: |
         docker login -u mwennrich -p ${{ secrets.DOCKER_HUB_TOKEN }}
-        make dockerimages
-        make dockerpush
+        make dockerbuildpush
