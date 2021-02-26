@@ -8,7 +8,7 @@ spec:
   resources:
     requests:
       storage: 100Mi
-  storageClassName: csi-lvm-sc-linear # defined in csi-setup.yaml
+  storageClassName: csi-lvm-sc-linear
 ---
 kind: Pod
 apiVersion: v1
@@ -25,4 +25,4 @@ spec:
   volumes:
     - name: my-csi-volume
       persistentVolumeClaim:
-        claimName: csi-pvc # defined in csi-pvs.yaml
+        claimName: csi-pvc
