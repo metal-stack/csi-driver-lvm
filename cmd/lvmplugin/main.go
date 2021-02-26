@@ -35,7 +35,7 @@ func init() {
 
 var (
 	endpoint          = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")
-	driverName        = flag.String("drivername", "lvm.csi.k8s.io", "name of the driver")
+	driverName        = flag.String("drivername", "lvm.csi.metal-stack.io", "name of the driver")
 	nodeID            = flag.String("nodeid", "", "node id")
 	ephemeral         = flag.Bool("ephemeral", false, "publish volumes in ephemeral mode even if kubelet did not ask for it (only needed for Kubernetes 1.15)")
 	maxVolumesPerNode = flag.Int64("maxvolumespernode", 0, "limit of volumes per node")

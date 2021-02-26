@@ -2,7 +2,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: csi-lvm-sc-mirror
-provisioner: lvm.csi.k8s.io
+provisioner: lvm.csi.metal-stack.io
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true

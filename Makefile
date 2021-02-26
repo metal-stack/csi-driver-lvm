@@ -21,10 +21,10 @@ dockerbuildpush:
 
 .PHONY: cidockerbuildpush
 cidockerbuildpush:
-	docker build -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile
-	docker build -t metalstack/lvmplugin:${DOCKER_TAG} .
-	docker push metalstack/lvmplugin:${DOCKER_TAG}
-	docker push metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG}
+	docker build -t metalstack/csi-lvmplugin-provisioner:${TEST_TAG} . -f cmd/provisioner/Dockerfile
+	docker build -t metalstack/lvmplugin:${TEST_TAG} .
+	docker push metalstack/lvmplugin:${TEST_TAG}
+	docker push metalstack/csi-lvmplugin-provisioner:${TEST_TAG}
 
 .PHONY: tests
 tests: | start-test build-provisioner build-plugin build-test do-test clean-test
