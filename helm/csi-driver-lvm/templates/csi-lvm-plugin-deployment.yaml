@@ -165,7 +165,6 @@ spec:
         name: dev-dir
       - hostPath:
           path: /lib/modules
-          type: Directory
         name: mod-dir
       - hostPath:
           path: /etc/lvm/backup
