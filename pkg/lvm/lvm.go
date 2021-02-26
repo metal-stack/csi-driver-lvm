@@ -573,7 +573,7 @@ func extendLVS(ctx context.Context, vg string, name string, size uint64, isBlock
 func RemoveLVS(ctx context.Context, vg string, name string) (string, error) {
 
 	if !lvExists(vg, name) {
-		return "", fmt.Errorf("logical volume %s does not exist", name)
+		return fmt.Sprintf("logical volume %s does not exist. Assuming it has already been deleted.", name), nil
 	}
 	args := []string{"-q", "-y"}
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
