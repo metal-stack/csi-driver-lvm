@@ -26,6 +26,12 @@
     [ "$output" = "volume-test-inline,Running" ]
 }
 
+@test "delete inline linear pod" {
+    run kubectl delete -f /files/inline.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod \"volume-test-inline\" deleted" ]
+}
+
 @test "create pvc" {
     run kubectl apply -f /files/pvc.yaml
     [ "$status" -eq 0 ]
