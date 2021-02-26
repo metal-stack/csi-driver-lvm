@@ -110,6 +110,7 @@
     [ "${lines[1]}" = "persistentvolumeclaim \"lvm-pvc-linear\" deleted" ]
 }
 @test "clean up " {
+    run sleep 60
     run helm uninstall ${DOCKER_TAG} -n ${DOCKER_TAG}
     run sleep 30
     run kubectl delete ns ${DOCKER_TAG}
