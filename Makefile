@@ -19,6 +19,13 @@ dockerbuildpush:
 	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile
 	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push -t metalstack/lvmplugin:${DOCKER_TAG} .
 
+.PHONY: cidockerbuildpush
+cidockerbuildpush:
+	docker build -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile
+	docker build -t metalstack/lvmplugin:${DOCKER_TAG} .
+	docker push metalstack/lvmplugin:${DOCKER_TAG}
+	docker push metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG}
+
 .PHONY: tests
 tests: | start-test build-provisioner build-plugin build-test do-test clean-test
 
@@ -54,7 +61,7 @@ clean-test:
 	@minikube delete
 
 .PHONY: metalci
-metalci: dockerbuildpush
+metalci: cidockerbuildpush
 	@cp -R helm tests/files
 	docker build --build-arg docker_tag=${TEST_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests:${TEST_TAG} tests > /dev/null
 	docker run --rm csi-lvm-tests:${TEST_TAG} bats /bats
