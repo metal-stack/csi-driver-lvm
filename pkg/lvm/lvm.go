@@ -529,7 +529,7 @@ func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 
 	tags := []string{"lv.metal-stack.io/csi-lvm-driver"}
 	for _, tag := range tags {
-		args = append(args, "--add-tag", tag)
+		args = append(args, "--addtag", tag)
 	}
 	args = append(args, vg)
 	klog.Infof("lvcreate %s", args)
