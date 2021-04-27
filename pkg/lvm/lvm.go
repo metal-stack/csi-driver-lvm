@@ -478,7 +478,7 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 	args := []string{"-v", name}
 	args = append(args, physicalVolumes...)
 	for _, tag := range tags {
-		args = append(args, "--add-tag", tag)
+		args = append(args, "--addtag", tag)
 	}
 	klog.Infof("create vg with command: vgcreate %v", args)
 	cmd := exec.Command("vgcreate", args...)
