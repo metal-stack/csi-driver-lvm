@@ -31,10 +31,6 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
-	maxStorageCapacity = tib
-)
-
 type controllerServer struct {
 	caps             []*csi.ControllerServiceCapability
 	nodeID           string
@@ -110,15 +106,6 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 	if accessTypeBlock && accessTypeMount {
 		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
-	}
-
-	// TODO
-	// this check must bei implemented in createlvs executed by the provisioner pod on the node
-
-	// Check for maximum available capacity
-	capacity := int64(req.GetCapacityRange().GetRequiredBytes())
-	if capacity >= maxStorageCapacity {
-		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
 	}
 
 	lvmType := req.GetParameters()["type"]

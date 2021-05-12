@@ -303,9 +303,6 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
 	}
 	capacity := int64(req.GetCapacityRange().GetRequiredBytes())
-	if capacity >= maxStorageCapacity {
-		return nil, status.Errorf(codes.OutOfRange, "Requested capacity %d exceeds maximum allowed %d", capacity, maxStorageCapacity)
-	}
 
 	volID := req.GetVolumeId()
 	volPath := req.GetVolumePath()
