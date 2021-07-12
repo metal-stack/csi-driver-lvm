@@ -1,4 +1,4 @@
-FROM alpine
+FROM alpine:3.14
 
 ARG docker_tag
 ENV DOCKER_TAG=$docker_tag

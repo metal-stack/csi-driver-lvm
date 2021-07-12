@@ -49,7 +49,7 @@ func newNodeServer(nodeID string, ephemeral bool, maxVolumesPerNode int64, devic
 	vgexists := vgExists(vgName)
 	if !vgexists {
 		klog.Infof("volumegroup: %s not found\n", vgName)
-		vgActivate(vgName)
+		vgActivate()
 		// now check again for existing vg again
 	}
 	cmd := exec.Command("lvchange", "-ay", vgName)
@@ -121,12 +121,12 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 		output, err := CreateVG(ns.vgName, ns.devicesPattern)
 		if err != nil {
-			return nil, fmt.Errorf("unable to create vg: %v output:%s", err, output)
+			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
 		output, err = CreateLVS(context.Background(), ns.vgName, volID, uint64(size), req.GetVolumeContext()["type"])
 		if err != nil {
-			return nil, fmt.Errorf("unable to create lv: %v output:%s", err, output)
+			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}
 
 		klog.V(4).Infof("ephemeral mode: created volume: %s, size: %d", volID, size)
@@ -136,7 +136,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 		output, err := bindMountLV(req.GetVolumeId(), targetPath, ns.vgName)
 		if err != nil {
-			return nil, fmt.Errorf("unable to bind mount lv: %v output:%s", err, output)
+			return nil, fmt.Errorf("unable to bind mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
 		klog.Infof("block lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
@@ -145,7 +145,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 		output, err := mountLV(req.GetVolumeId(), targetPath, ns.vgName)
 		if err != nil {
-			return nil, fmt.Errorf("unable to mount lv: %v output:%s", err, output)
+			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
 		klog.Infof("mounted lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
@@ -170,17 +170,14 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
-	output, err := umountLV(req.GetTargetPath())
-	if err != nil {
-		return nil, fmt.Errorf("unable to umount lv: %v output:%s", err, output)
-	}
+	umountLV(req.GetTargetPath())
 
 	// ephemeral volumes start with "csi-"
 	if strings.HasPrefix(volID, "csi-") {
 		// remove ephemeral volume here
 		output, err := RemoveLVS(context.Background(), ns.vgName, volID)
 		if err != nil {
-			return nil, fmt.Errorf("unable to delete lv: %v output:%s", err, output)
+			return nil, fmt.Errorf("unable to delete lv: %w output:%s", err, output)
 		}
 		klog.Infof("lv %s vg:%s deleted", volID, ns.vgName)
 
@@ -322,10 +319,10 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 		isBlock = true
 	}
 
-	output, err := extendLVS(context.Background(), ns.vgName, volID, uint64(capacity), isBlock)
+	output, err := extendLVS(ns.vgName, volID, uint64(capacity), isBlock)
 
 	if err != nil {
-		return nil, fmt.Errorf("unable to umount lv: %v output:%s", err, output)
+		return nil, fmt.Errorf("unable to umount lv: %w output:%s", err, output)
 
 	}
 
