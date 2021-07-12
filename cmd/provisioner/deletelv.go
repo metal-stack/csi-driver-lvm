@@ -46,7 +46,7 @@ func deleteLV(c *cli.Context) error {
 
 	output, err := lvm.RemoveLVS(context.Background(), vgName, lvName)
 	if err != nil {
-		return fmt.Errorf("unable to delete lv: %v output:%s", err, output)
+		return fmt.Errorf("unable to delete lv: %w output:%s", err, output)
 	}
 	klog.Infof("lv %s vg:%s deleted", lvName, vgName)
 	return nil

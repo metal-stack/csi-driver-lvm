@@ -158,13 +158,13 @@ func mountLV(lvname, mountPath string, vgName string) (string, error) {
 		cmd = exec.Command("mkfs.ext4", lvPath)
 		out, err = cmd.CombinedOutput()
 		if err != nil {
-			return string(out), fmt.Errorf("unable to format lv:%s err:%v", lvname, err)
+			return string(out), fmt.Errorf("unable to format lv:%s err:%w", lvname, err)
 		}
 	}
 
 	err = os.MkdirAll(mountPath, 0777)
 	if err != nil {
-		return string(out), fmt.Errorf("unable to create mount directory for lv:%s err:%v", lvname, err)
+		return string(out), fmt.Errorf("unable to create mount directory for lv:%s err:%w", lvname, err)
 	}
 
 	// --make-shared is required that this mount is visible outside this container.
@@ -175,12 +175,12 @@ func mountLV(lvname, mountPath string, vgName string) (string, error) {
 	if err != nil {
 		mountOutput := string(out)
 		if !strings.Contains(mountOutput, "already mounted") {
-			return string(out), fmt.Errorf("unable to mount %s to %s err:%v output:%s", lvPath, mountPath, err, out)
+			return string(out), fmt.Errorf("unable to mount %s to %s err:%w output:%s", lvPath, mountPath, err, out)
 		}
 	}
 	err = os.Chmod(mountPath, 0777)
 	if err != nil {
-		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%v", mountPath, err)
+		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%w", mountPath, err)
 	}
 	klog.Infof("mountlv output:%s", out)
 	return "", nil
@@ -190,7 +190,7 @@ func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 	_, err := os.Create(mountPath)
 	if err != nil {
-		return "", fmt.Errorf("unable to create mount directory for lv:%s err:%v", lvname, err)
+		return "", fmt.Errorf("unable to create mount directory for lv:%s err:%w", lvname, err)
 	}
 
 	// --make-shared is required that this mount is visible outside this container.
@@ -202,25 +202,23 @@ func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
 	if err != nil {
 		mountOutput := string(out)
 		if !strings.Contains(mountOutput, "already mounted") {
-			return string(out), fmt.Errorf("unable to mount %s to %s err:%v output:%s", lvPath, mountPath, err, out)
+			return string(out), fmt.Errorf("unable to mount %s to %s err:%w output:%s", lvPath, mountPath, err, out)
 		}
 	}
 	err = os.Chmod(mountPath, 0777)
 	if err != nil {
-		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%v", mountPath, err)
+		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%w", mountPath, err)
 	}
 	klog.Infof("bindmountlv output:%s", out)
 	return "", nil
 }
 
-func umountLV(targetPath string) (string, error) {
-
+func umountLV(targetPath string) {
 	cmd := exec.Command("umount", "--lazy", "--force", targetPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Errorf("unable to umount %s output:%s err:%v", targetPath, string(out), err)
+		klog.Errorf("unable to umount %s output:%s err:%w", targetPath, string(out), err)
 	}
-	return "", nil
 }
 
 func createProvisionerPod(va volumeAction) (err error) {
@@ -415,7 +413,7 @@ func vgExists(vgname string) bool {
 }
 
 // VgActivate execute vgchange -ay to activate all volumes of the volume group
-func vgActivate(name string) {
+func vgActivate() {
 	// scan for vgs and activate if any
 	cmd := exec.Command("vgscan")
 	out, err := cmd.CombinedOutput()
@@ -454,7 +452,7 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 		klog.Infof("volumegroup: %s already exists\n", name)
 		return name, nil
 	}
-	vgActivate(name)
+	vgActivate()
 	// now check again for existing vg again
 	vgexists = vgExists(name)
 	if vgexists {
@@ -464,7 +462,7 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 
 	physicalVolumes, err := devices(dp)
 	if err != nil {
-		return "", fmt.Errorf("unable to lookup devices from devicesPattern %s, err:%v", devicesPattern, err)
+		return "", fmt.Errorf("unable to lookup devices from devicesPattern %s, err:%w", devicesPattern, err)
 	}
 	tags := []string{"vg.metal-stack.io/csi-lvm-driver"}
 
@@ -502,7 +500,7 @@ func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 
 	pvs, err := pvCount(vg)
 	if err != nil {
-		return "", fmt.Errorf("unable to determine pv count of vg: %v", err)
+		return "", fmt.Errorf("unable to determine pv count of vg: %w", err)
 	}
 
 	if pvs < 2 {
@@ -532,7 +530,8 @@ func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType
 }
 
 func lvExists(vg string, name string) bool {
-	cmd := exec.Command("lvs", vg+"/"+name, "--noheadings", "-o", "lv_name")
+	vgname := vg + "/" + name
+	cmd := exec.Command("lvs", vgname, "--noheadings", "-o", "lv_name")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		klog.Infof("unable to list existing volumes:%v", err)
@@ -541,8 +540,7 @@ func lvExists(vg string, name string) bool {
 	return name == strings.TrimSpace(string(out))
 }
 
-func extendLVS(ctx context.Context, vg string, name string, size uint64, isBlock bool) (string, error) {
-
+func extendLVS(vg string, name string, size uint64, isBlock bool) (string, error) {
 	if !lvExists(vg, name) {
 		return "", fmt.Errorf("logical volume %s does not exist", name)
 	}
