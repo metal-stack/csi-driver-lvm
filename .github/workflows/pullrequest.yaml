@@ -13,7 +13,7 @@ jobs:
       run: '["${{ secrets.DOCKER_HUB_TOKEN }}" == ""] && echo "::set-output name=is_fork_pr::true" || echo "::set-output name=is_fork_pr::false"'
     - name: Testing
       run: |
-        export GITHUB_TAG_NAME=pr-${GITHUB_HEAD_REF##*/}
+        export GIT_TAG_NAME=pr-${GITHUB_HEAD_REF##*/}
         docker login -u mwennrich -p ${{ secrets.DOCKER_HUB_TOKEN }}
         echo "${{ secrets.KUBECONFIG }}" > tests/files/.kubeconfig
         make metalci

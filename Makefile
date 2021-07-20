@@ -1,6 +1,6 @@
 GO111MODULE := on
-DOCKER_TAG := $(or $(subst _,-,$(GITHUB_TAG_NAME)), latest)
-TEST_TAG := $(or $(subst .,-,$(subst _,-,$(GITHUB_TAG_NAME))), latest)
+DOCKER_TAG := $(or $(subst _,-,$(GIT_TAG_NAME)), latest)
+TEST_TAG := $(or $(subst .,-,$(subst _,-,$(GIT_TAG_NAME))), latest)
 
 
 all: provisioner lvmplugin
