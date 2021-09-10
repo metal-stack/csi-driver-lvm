@@ -182,6 +182,9 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		if k8serror.IsNotFound(err) {
 			klog.Infof("node %s not found anymore. Assuming volume %s is gone for good.", node, volID)
 			return &csi.DeleteVolumeResponse{}, nil
+		} else {
+			klog.Errorf("error getting nodes: %v", err)
+			return nil, err
 		}
 	}
 
