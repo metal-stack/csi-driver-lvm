@@ -12,21 +12,34 @@ This CSI driver is derived from [csi-driver-host-path](https://github.com/kubern
 
 For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
 
-## Installation ##
+## Installation via official helm chart ##
 
 You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
 
 ```bash
-helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
+helm install csi-driver-lvm csi-driver-lvm -n csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-1]n[0-9]' --repo https://helm.metal-stack.io/
 ```
 
 Now you can use one of following storageClasses:
 
-* `csi-lvm-sc-mirror`
-* `csi-lvm-sc-linear`
-* `csi-lvm-sc-striped`
+* `csi-driver-lvm-mirror`
+* `csi-driver-lvm-linear`
+* `csi-driver-lvm-striped`
 
-### Todo ###
+(to get the previous old and now deprecated `csi-lvm-sc-linear, ...` storageclasses, set helm-chart value `compat03x=true` )
+
+## Installation from local helm directory ##
+
+***Please do not use the helm chart from this repository anymore. Instead use the helm chart from <https://helm.metal-stack.io/>***
+
+Migration instructions:
+
+```bash
+kubectl delete csidrivers.storage.k8s.io lvm.csi.metal-stack.io
+helm upgrade csi-driver-lvm csi-driver-lvm -n csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-1]n[0-9]' --set comapt03x=true --repo https://helm.metal-stack.io/
+```
+
+## Todo ##
 
 * implement CreateSnapshot(), ListSnapshots(), DeleteSnapshot()
 
@@ -37,57 +50,4 @@ TL;DR:
 ```bash
 ./start-minikube-on-linux.sh
 helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/loop[0-1]'
-```
-
-### Start minikube and create dummy volumes ###
-
-```bash
-minikube start --memory 4g
-minikube ssh 'for i in 0 1; do fallocate -l 1G loop${i} ; sudo losetup -f loop${i}; sudo losetup -a ; done'
-```
-
-On minikube we have to copy a "real" losetup:
-
-In minikube losetup is a symlink to busybox.
-
-The busybox implentation of losetup lacks some flags on which the kubernetes currently depends on.
-(see <https://github.com/kubernetes/kubernetes/issues/83265> )
-
-```bash
- minikube ssh 'sudo rm /sbin/losetup'
- scp -o 'StrictHostKeyChecking=no' -i $(minikube ssh-key) /usr/sbin/losetup  docker@$(minikube ip):/tmp/losetup
- minikube ssh 'sudo mv /tmp/losetup /sbin/losetup'
-```
-
-### Build ###
-
-```bash
-make
-docker build
-docker push
-```
-
-Replace metalstack/lvmplugin:latest image in helm/csi-driver-lvm/values.yaml
-
-### Deploy ###
-
-```bash
-helm install mytest helm/csi-driver-lvm
-```
-
-### Test ###
-
-```bash
-kubectl apply -f examples/csi-pvc-raw.yaml
-kubectl apply -f examples/csi-pod-raw.yaml
-
-
-kubectl apply -f examples/csi-pvc.yaml
-kubectl apply -f examples/csi-app.yaml
-
-kubectl delete -f examples/csi-pod-raw.yaml
-kubectl delete -f examples/csi-pvc-raw.yaml
-
-kubectl delete -f  examples/csi-app.yaml
-kubectl delete -f examples/csi-pvc.yaml
 ```
