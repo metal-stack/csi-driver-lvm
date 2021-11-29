@@ -8,7 +8,7 @@ spec:
   resources:
     requests:
       storage: 100Mi
-  storageClassName: csi-lvm-sc-linear
+  storageClassName: csi-driver-lvm-linear
 ---
 kind: Pod
 apiVersion: v1
