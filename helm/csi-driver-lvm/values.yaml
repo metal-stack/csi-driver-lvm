@@ -24,3 +24,16 @@ rbac:
 
 kubernetes:
   kubeletPath: /var/lib/kubelet
+
+storageClasses:
+  linear:
+    enabled: true
+    additionalAnnotations: []
+    # this might be used to mark one of the StorageClasses as default:
+    # storageclass.kubernetes.io/is-default-class: "true"
+  striped:
+    enabled: true
+    additionalAnnotations: []
+  mirror:
+    enabled: true
+    additionalAnnotations: []
