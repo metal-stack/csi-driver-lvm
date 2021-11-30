@@ -1,7 +1,13 @@
+{{- $storageClass := .Values.storageClasses.linear -}}
+{{ if $storageClass.enabled }}
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: {{ .Values.lvm.storageClassStub }}-sc-linear
+{{- if not (empty $storageClass.additionalAnnotations) }}
+  annotations:
+    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
+{{ end }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -11,3 +17,4 @@ volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
 parameters:
   type: "linear"
+{{ end }}
