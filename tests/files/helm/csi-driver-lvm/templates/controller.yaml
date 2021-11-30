@@ -10,7 +10,7 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-driver-lvm-controller
+  name: csi-driver-lvm-controller-{{ .Values.lvm.storageClassStub }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -52,7 +52,7 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-driver-lvm-controller
+  name: csi-driver-lvm-controller-{{ .Values.lvm.storageClassStub }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -62,14 +62,14 @@ subjects:
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: csi-driver-lvm-controller
+  name: csi-driver-lvm-controller-{{ .Values.lvm.storageClassStub }}
   apiGroup: rbac.authorization.k8s.io
 ---
 {{- if and .Values.rbac.pspEnabled (.Capabilities.APIVersions.Has "policy/v1beta1") }}
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:
-  name: csi-driver-lvm-controller
+  name: csi-driver-lvm-controller-{{ .Values.lvm.storageClassStub }}
   labels:
     heritage: {{ .Release.Service }}
     release: {{ .Release.Name }}
@@ -100,7 +100,7 @@ rules:
 - apiGroups:
   - policy
   resourceNames:
-  - csi-driver-lvm-controller
+  - csi-driver-lvm-controller-{{ .Values.lvm.storageClassStub }}
   resources:
   - podsecuritypolicies
   verbs:
