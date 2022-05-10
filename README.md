@@ -10,7 +10,7 @@ This CSI driver is derived from [csi-driver-host-path](https://github.com/kubern
 
 ## Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm ##
 
-For the special case of block volumes, the filesystem-expansion has to be perfomend by the app using the block device
+For the special case of block volumes, the filesystem-expansion has to be performed by the app using the block device
 
 ## Installation ##
 
@@ -25,6 +25,10 @@ Now you can use one of following storageClasses:
 * `csi-lvm-sc-mirror`
 * `csi-lvm-sc-linear`
 * `csi-lvm-sc-striped`
+
+## Migration ##
+
+If you want to migrate your existing PVC to / from csi-driver-lvm, you can use [korb](https://github.com/BeryJu/korb).
 
 ### Todo ###
 
