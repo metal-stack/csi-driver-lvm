@@ -37,3 +37,29 @@ storageClasses:
   mirror:
     enabled: true
     additionalAnnotations: []
+
+nodeSelector:
+  # The plugin ds will run on all nodes if it has a toleration,
+  # so it is not necessary to set a nodeSelector for it
+
+  # The provisioner has an affinity for nodes with a plugin pod,
+  # but since that's a daemonset, we allow more fine-grained node selection
+  provisioner:
+    # May need to be updated to node-role.kubernetes.io/control-plane
+    node-role.kubernetes.io/master: ""
+
+tolerations:
+  plugin:
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  provisioner:
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule

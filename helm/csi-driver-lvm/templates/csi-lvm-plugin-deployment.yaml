@@ -29,6 +29,10 @@ spec:
         app: csi-lvmplugin
     spec:
       serviceAccountName: csi-lvmplugin
+      {{- if .Values.tolerations.plugin }}
+      tolerations:
+{{ toYaml .Values.tolerations.plugin | indent 8 }}
+      {{- end }}
       containers:
       - args:
         - --v=5

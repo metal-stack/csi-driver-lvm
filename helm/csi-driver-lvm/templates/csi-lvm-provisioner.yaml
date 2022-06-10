@@ -32,6 +32,10 @@ spec:
       labels:
         app: csi-lvm-provisioner
     spec:
+      {{- if .Values.nodeSelector.provisioner }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector.provisioner | indent 8 }}
+      {{- end }}
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -42,6 +46,10 @@ spec:
                 values:
                 - csi-lvmplugin
             topologyKey: kubernetes.io/hostname
+      {{- if .Values.tolerations.provisioner }}
+      tolerations:
+{{ toYaml .Values.tolerations.provisioner | indent 8 }}
+      {{- end }}
       serviceAccountName: csi-provisioner
       containers:
         - name: csi-provisioner
