@@ -40,7 +40,7 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: spec.nodeName
-        image: {{ .Values.register.image }}
+        image: {{ .Values.registrar.image }}
         imagePullPolicy: IfNotPresent
         name: node-driver-registrar
         resources: {}

@@ -28,7 +28,7 @@ kubernetes:
 attacher:
   image: k8s.gcr.io/sig-storage/csi-attacher:v2.2.1
 
-liveness-probe:
+livenessprobe:
   image: k8s.gcr.io/sig-storage/livenessprobe:v2.2.0
 
 provisioner:
