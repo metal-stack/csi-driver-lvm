@@ -25,6 +25,21 @@ rbac:
 kubernetes:
   kubeletPath: /var/lib/kubelet
 
+attacher:
+  image: k8s.gcr.io/sig-storage/csi-attacher:v2.2.1
+
+livenessprobe:
+  image: k8s.gcr.io/sig-storage/livenessprobe:v2.2.0
+
+provisioner:
+  image: k8s.gcr.io/sig-storage/csi-provisioner:v1.6.1
+
+registrar:
+  image: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v1.3.0
+
+resizer:
+  image: k8s.gcr.io/sig-storage/csi-resizer:v0.5.0
+
 storageClasses:
   linear:
     enabled: true
