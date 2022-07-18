@@ -22,9 +22,9 @@ helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n
 
 Now you can use one of following storageClasses:
 
-* `csi-lvm-sc-mirror`
-* `csi-lvm-sc-linear`
-* `csi-lvm-sc-striped`
+* `csi-driver-lvm-linear`
+* `csi-driver-lvm-mirror`
+* `csi-driver-lvm-striped`
 
 ## Migration ##
 
