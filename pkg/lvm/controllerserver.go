@@ -43,19 +43,19 @@ type controllerServer struct {
 }
 
 // NewControllerServer
-func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) *controllerServer {
+func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) (*controllerServer, error) {
 	if ephemeral {
-		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID}
+		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID}, nil
 	}
 
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 	// creates the clientset
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		panic(err.Error())
+		return nil, err
 	}
 	return &controllerServer{
 		caps: getControllerServiceCapabilities(
@@ -74,7 +74,7 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 		namespace:        namespace,
 		provisionerImage: provisionerImage,
 		pullPolicy:       pullPolicy,
-	}
+	}, nil
 }
 
 func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {

@@ -73,5 +73,9 @@ func handle() {
 		fmt.Printf("Failed to initialize driver: %s\n", err.Error())
 		os.Exit(1)
 	}
-	driver.Run()
+	err = driver.Run()
+	if err != nil {
+		fmt.Printf("Failed to start driver: %s\n", err.Error())
+		os.Exit(1)
+	}
 }

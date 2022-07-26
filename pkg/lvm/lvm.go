@@ -128,15 +128,19 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 }
 
 // Run starts the lvm plugin
-func (lvm *Lvm) Run() {
+func (lvm *Lvm) Run() error {
+	var err error
 	// Create GRPC servers
 	lvm.ids = newIdentityServer(lvm.name, lvm.version)
 	lvm.ns = newNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
-	lvm.cs = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
-
+	lvm.cs, err = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
+	if err != nil {
+		return err
+	}
 	s := newNonBlockingGRPCServer()
 	s.start(lvm.endpoint, lvm.ids, lvm.cs, lvm.ns)
 	s.wait()
+	return nil
 }
 
 func mountLV(lvname, mountPath string, vgName string) (string, error) {
