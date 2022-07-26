@@ -7,6 +7,7 @@ all: provisioner lvmplugin
 
 .PHONY: lvmplugin
 lvmplugin:
+	go mod tidy
 	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o ./bin/lvmplugin ./cmd/lvmplugin
 	strip ./bin/lvmplugin
 

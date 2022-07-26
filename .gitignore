@@ -2,3 +2,7 @@
 /tests/files/helm
 /tests/files/.dockerenv
 /tests/files/.kubeconfig
+
+# editor specific files
+.idea
+.vscode

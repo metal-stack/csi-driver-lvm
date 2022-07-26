@@ -70,7 +70,7 @@ func main() {
 func handle() {
 	driver, err := lvm.NewLvmDriver(*driverName, *nodeID, *endpoint, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName, *namespace, *provisionerImage, *pullPolicy)
 	if err != nil {
-		fmt.Printf("Failed to initialize driver: %s", err.Error())
+		fmt.Printf("Failed to initialize driver: %s\n", err.Error())
 		os.Exit(1)
 	}
 	driver.Run()
