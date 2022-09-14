@@ -68,6 +68,9 @@ jobs:
         [ "${GITHUB_EVENT_NAME}" == 'release' ] && echo "GITHUB_TAG_NAME=${GITHUB_REF##*/}-integration" >> $GITHUB_ENV || true
         [ "${GITHUB_EVENT_NAME}" == 'push' ] && echo "GITHUB_TAG_NAME=latest-integration" >> $GITHUB_ENV || true
 
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v2
+
     - name: Start minikube
       uses: medyagh/setup-minikube@master
       with:
