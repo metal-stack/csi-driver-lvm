@@ -62,14 +62,12 @@ jobs:
     needs: build
 
     steps:
-    - name: Make tag
+    - name: Prepare
       run: |
         [ "${GITHUB_EVENT_NAME}" == 'pull_request' ] && echo "GITHUB_TAG_NAME=${GITHUB_HEAD_REF##*/}-integration" >> $GITHUB_ENV || true
         [ "${GITHUB_EVENT_NAME}" == 'release' ] && echo "GITHUB_TAG_NAME=${GITHUB_REF##*/}-integration" >> $GITHUB_ENV || true
         [ "${GITHUB_EVENT_NAME}" == 'push' ] && echo "GITHUB_TAG_NAME=latest-integration" >> $GITHUB_ENV || true
-
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v2
+        sudo apt-get install qemu-system-x86
 
     - name: Start minikube
       uses: medyagh/setup-minikube@master
@@ -84,7 +82,7 @@ jobs:
 
   build-platforms:
     name: Docker Build Platforms
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: integration
 
     steps:
