@@ -71,14 +71,10 @@ jobs:
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v2
 
-    - name: Install virsh for mini-kube
-      run: |
-        sudo apt-get install -y libvirt-clients
-
     - name: Start minikube
       uses: medyagh/setup-minikube@master
       with:
-        driver: kvm2
+        driver: qemu
 
     - name: Test
       run:
