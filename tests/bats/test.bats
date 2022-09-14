@@ -8,7 +8,7 @@
 @test "deploy csi-lvm-controller" {
     run helm uninstall ${DOCKER_TAG} -n ${DOCKER_TAG}
     run kubectl create ns ${DOCKER_TAG}
-    run helm install ${DOCKER_TAG} --wait /files/helm/csi-driver-lvm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}" --set pluginImage.pullPolicy=${PULL_POLICY} --set provisionerImage.pullPolicy=${PULL_POLICY} --set lvm.driverName="${DOCKER_TAG}.lvm.csi.metal-stack.io" --set lvm.storageClassStub="${DOCKER_TAG}-csi-lvm" -n ${DOCKER_TAG}
+    run helm install --repo ${HELM_REPO:=https://helm.metal-stack.io} ${DOCKER_TAG} --wait /files/helm/csi-driver-lvm --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="${DEVICEPATTERN}" --set pluginImage.pullPolicy=${PULL_POLICY} --set provisionerImage.pullPolicy=${PULL_POLICY} --set lvm.driverName="${DOCKER_TAG}.lvm.csi.metal-stack.io" --set lvm.storageClassStub="${DOCKER_TAG}-csi-lvm" -n ${DOCKER_TAG}
     [ "$status" -eq 0 ]
 }
 
