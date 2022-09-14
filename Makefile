@@ -1,6 +1,5 @@
 GO111MODULE := on
 DOCKER_TAG := $(or $(subst _,-,$(GITHUB_TAG_NAME)), latest)
-TEST_TAG := $(or $(subst .,-,$(subst _,-,$(GITHUB_TAG_NAME))), latest)
 
 
 all: provisioner lvmplugin
@@ -16,20 +15,8 @@ provisioner:
 	go build -tags netgo -o bin/csi-lvmplugin-provisioner cmd/provisioner/*.go
 	strip bin/csi-lvmplugin-provisioner
 
-.PHONY: dockerbuildpush
-dockerbuildpush:
-	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile
-	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push -t metalstack/lvmplugin:${DOCKER_TAG} .
-
-.PHONY: cidockerbuildpush
-cidockerbuildpush:
-	docker build -t metalstack/csi-lvmplugin-provisioner:${TEST_TAG} . -f cmd/provisioner/Dockerfile
-	docker build -t metalstack/lvmplugin:${TEST_TAG} .
-	docker push metalstack/lvmplugin:${TEST_TAG}
-	docker push metalstack/csi-lvmplugin-provisioner:${TEST_TAG}
-
 .PHONY: tests
-tests: | start-test build-provisioner build-plugin build-test do-test clean-test
+tests: | start-test build-provisioner build-plugin do-test clean-test
 
 .PHONY: start-test
 start-test:
@@ -46,25 +33,3 @@ build-provisioner:
 .PHONY: build-plugin
 build-plugin:
 	@sh -c '. ./tests/files/.dockerenv && docker build -t metalstack/lvmplugin:${DOCKER_TAG} . '
-
-.PHONY: build-test
-build-test:
-	@cp -R helm tests/files
-	@sh -c '. ./tests/files/.dockerenv && docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern="/dev/loop[0-1]" --build-arg pullpolicy=IfNotPresent -t csi-lvm-tests:${DOCKER_TAG} tests' > /dev/null
-
-.PHONY: do-test
-do-test:
-	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests:${DOCKER_TAG} bats /bats'
-
-.PHONY: clean-test
-clean-test:
-	@rm tests/files/.dockerenv
-	@rm tests/files/.kubeconfig
-	@minikube delete
-
-.PHONY: metalci
-metalci: cidockerbuildpush
-	@cp -R helm tests/files
-	docker build --build-arg docker_tag=${TEST_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests:${TEST_TAG} tests > /dev/null
-	docker run --rm csi-lvm-tests:${TEST_TAG} bats /bats
-
