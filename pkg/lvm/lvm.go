@@ -479,7 +479,7 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 
 // CreateLVS creates the new volume
 // used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
-func CreateLVS(ctx context.Context, vg string, name string, size uint64, lvmType string) (string, error) {
+func CreateLVS(vg string, name string, size uint64, lvmType string) (string, error) {
 
 	if lvExists(vg, name) {
 		klog.Infof("logicalvolume: %s already exists\n", name)
@@ -561,7 +561,7 @@ func extendLVS(vg string, name string, size uint64, isBlock bool) (string, error
 }
 
 // RemoveLVS executes lvremove
-func RemoveLVS(ctx context.Context, vg string, name string) (string, error) {
+func RemoveLVS(vg string, name string) (string, error) {
 
 	if !lvExists(vg, name) {
 		return fmt.Sprintf("logical volume %s does not exist. Assuming it has already been deleted.", name), nil

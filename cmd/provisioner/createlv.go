@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	lvm "github.com/metal-stack/csi-driver-lvm/pkg/lvm"
@@ -73,7 +72,7 @@ func createLV(c *cli.Context) error {
 		return fmt.Errorf("unable to create vg: %w output:%s", err, output)
 	}
 
-	output, err = lvm.CreateLVS(context.Background(), vgName, lvName, lvSize, lvmType)
+	output, err = lvm.CreateLVS(vgName, lvName, lvSize, lvmType)
 	if err != nil {
 		return fmt.Errorf("unable to create lv: %w output:%s", err, output)
 	}

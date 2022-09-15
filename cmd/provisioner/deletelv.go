@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
@@ -44,7 +43,7 @@ func deleteLV(c *cli.Context) error {
 
 	klog.Infof("delete lv %s vg:%s ", lvName, vgName)
 
-	output, err := lvm.RemoveLVS(context.Background(), vgName, lvName)
+	output, err := lvm.RemoveLVS(vgName, lvName)
 	if err != nil {
 		return fmt.Errorf("unable to delete lv: %w output:%s", err, output)
 	}

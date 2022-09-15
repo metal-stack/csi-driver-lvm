@@ -35,12 +35,6 @@ jobs:
       with:
         args: --build-tags integration -p bugs -p unused --timeout=10m
 
-    - name: Make tag
-      run: |
-        [ "${GITHUB_EVENT_NAME}" == 'pull_request' ] && echo "DOCKER_TAG=${GITHUB_HEAD_REF##*/}" >> $GITHUB_ENV || true
-        [ "${GITHUB_EVENT_NAME}" == 'release' ] && echo "DOCKER_TAG=${GITHUB_REF##*/}" >> $GITHUB_ENV || true
-        [ "${GITHUB_EVENT_NAME}" == 'push' ] && echo "DOCKER_TAG=latest" >> $GITHUB_ENV || true
-
     - name: Create k8s Kind Cluster
       uses: helm/kind-action@v1.3.0
       with:

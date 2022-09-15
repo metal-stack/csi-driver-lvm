@@ -37,8 +37,8 @@ test: build-plugin build-provisioner
 		  --name csi-driver-lvm \
 			--config tests/kind.yaml \
 			--kubeconfig $(KUBECONFIG); fi
-	@kind load --name csi-driver-lvm load docker-image csi-driver-lvm
-	@kind load --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
+	@kind --name csi-driver-lvm load docker-image csi-driver-lvm
+	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
 	@cd tests && docker build -t csi-bats . && cd -
 	@docker run -i$(DOCKER_TTY_ARG) \
 		-e HELM_REPO=$(HELM_REPO) \
