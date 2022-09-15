@@ -18,15 +18,16 @@ lvmplugin:
 
 .PHONY: provisioner
 provisioner:
+	go mod tidy
 	go build -tags netgo -o bin/csi-lvmplugin-provisioner cmd/provisioner/*.go
 	strip bin/csi-lvmplugin-provisioner
 
 .PHONY: build-plugin
-build-plugin: lvmplugin
+build-plugin:
 	docker build -t csi-driver-lvm .
 
 .PHONY: build-provisioner
-build-provisioner: provisioner
+build-provisioner:
 	docker build -t csi-driver-lvm-provisioner . -f cmd/provisioner/Dockerfile
 
 .PHONY: test
