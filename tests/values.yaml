@@ -1,0 +1,13 @@
+---
+pluginImage:
+  repository: csi-driver-lvm
+  tag: latest
+  pullPolicy: IfNotPresent
+
+provisionerImage:
+  repository: csi-driver-lvm-provisioner
+  tag: latest
+  pullPolicy: IfNotPresent
+
+lvm:
+  devicePattern: /dev/loop10[0-9]

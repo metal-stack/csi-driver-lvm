@@ -1,7 +1,12 @@
 GO111MODULE := on
 KUBECONFIG := $(shell pwd)/.kubeconfig
-DOCKER_TAG := $(or $(GITHUB_TAG_NAME),latest)
 HELM_REPO := "https://helm.metal-stack.io"
+
+ifeq ($(CI),true)
+  DOCKER_TTY_ARG=t
+else
+  DOCKER_TTY_ARG=
+endif
 
 all: provisioner lvmplugin
 
@@ -16,17 +21,26 @@ provisioner:
 	go build -tags netgo -o bin/csi-lvmplugin-provisioner cmd/provisioner/*.go
 	strip bin/csi-lvmplugin-provisioner
 
+.PHONY: build-plugin
+build-plugin: lvmplugin
+	docker build -t csi-driver-lvm .
+
+.PHONY: build-provisioner
+build-provisioner: provisioner
+	docker build -t csi-driver-lvm-provisioner . -f cmd/provisioner/Dockerfile
+
 .PHONY: test
-test:
+test: build-plugin build-provisioner
 	@if ! which kind > /dev/null; then echo "kind needs to be installed"; exit 1; fi
 	@if ! kind get clusters | grep csi-driver-lvm > /dev/null; then \
 		kind create cluster \
 		  --name csi-driver-lvm \
 			--config tests/kind.yaml \
 			--kubeconfig $(KUBECONFIG); fi
+	@kind load --name csi-driver-lvm load docker-image csi-driver-lvm
+	@kind load --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
 	@cd tests && docker build -t csi-bats . && cd -
-	@docker run -it \
-		-e DOCKER_TAG=$(DOCKER_TAG) \
+	@docker run -i$(DOCKER_TTY_ARG) \
 		-e HELM_REPO=$(HELM_REPO) \
 		-v "$(KUBECONFIG):/root/.kube/config" \
 		-v "$(PWD)/tests:/code" \
