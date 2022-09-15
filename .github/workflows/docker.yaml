@@ -25,6 +25,16 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
+    - name: Set up Go 1.18
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.18
+
+    - name: Lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        args: --build-tags integration -p bugs -p unused --timeout=10m
+
     - name: Make tag
       run: |
         [ "${GITHUB_EVENT_NAME}" == 'pull_request' ] && echo "DOCKER_TAG=${GITHUB_HEAD_REF##*/}" >> $GITHUB_ENV || true
