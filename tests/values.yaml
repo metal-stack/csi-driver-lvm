@@ -10,4 +10,4 @@ provisionerImage:
   pullPolicy: IfNotPresent
 
 lvm:
-  devicePattern: /dev/loop10[0-9]
+  devicePattern: /dev/loop100,/dev/loop101

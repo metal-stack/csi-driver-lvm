@@ -6,7 +6,7 @@ spec:
   accessModes:
     - ReadWriteOnce
   volumeMode: Block
-  storageClassName: csi-lvm-sc-linear
+  storageClassName: csi-driver-lvm-linear
   resources:
     requests:
       storage: 20Mi
@@ -18,8 +18,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: csi-lvm-sc-linear
+  storageClassName: csi-driver-lvm-linear
   resources:
     requests:
       storage: 20Mi
-
