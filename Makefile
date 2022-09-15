@@ -3,9 +3,9 @@ KUBECONFIG := $(shell pwd)/.kubeconfig
 HELM_REPO := "https://helm.metal-stack.io"
 
 ifeq ($(CI),true)
-  DOCKER_TTY_ARG=t
-else
   DOCKER_TTY_ARG=
+else
+  DOCKER_TTY_ARG=t
 endif
 
 all: provisioner lvmplugin
