@@ -47,4 +47,4 @@ test: build-plugin build-provisioner
 		-v "$(PWD)/tests:/code" \
 		--network host \
 		csi-bats \
-		--verbose-run --trace --timing --pretty bats/test.bats
+		--verbose-run --trace --timing bats/test.bats
