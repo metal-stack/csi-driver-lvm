@@ -57,7 +57,9 @@ jobs:
   build-platforms:
     name: Docker Build Platforms
     runs-on: self-hosted
-    needs: test
+    needs:
+      - lint
+      - test
 
     steps:
     - name: Log in to the container registry

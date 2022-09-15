@@ -32,14 +32,14 @@ build-provisioner:
 
 .PHONY: test
 test: # build-plugin build-provisioner
-	# @if ! which kind > /dev/null; then echo "kind needs to be installed"; exit 1; fi
-	# @if ! kind get clusters | grep csi-driver-lvm > /dev/null; then \
-	# 	kind create cluster \
-	# 	  --name csi-driver-lvm \
-	# 		--config tests/kind.yaml \
-	# 		--kubeconfig $(KUBECONFIG); fi
-	# @kind --name csi-driver-lvm load docker-image csi-driver-lvm
-	# @kind --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
+	@if ! which kind > /dev/null; then echo "kind needs to be installed"; exit 1; fi
+	@if ! kind get clusters | grep csi-driver-lvm > /dev/null; then \
+		kind create cluster \
+		  --name csi-driver-lvm \
+			--config tests/kind.yaml \
+			--kubeconfig $(KUBECONFIG); fi
+	@kind --name csi-driver-lvm load docker-image csi-driver-lvm
+	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
 	@cd tests && docker build -t csi-bats . && cd -
 	docker run -i$(DOCKER_TTY_ARG) \
 		-e HELM_REPO=$(HELM_REPO) \
@@ -47,4 +47,4 @@ test: # build-plugin build-provisioner
 		-v "$(PWD)/tests:/code" \
 		--network host \
 		csi-bats \
-		bats/test.bats
+		--verbose-run --trace --timing --pretty bats/test.bats
