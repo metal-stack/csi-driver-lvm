@@ -1,6 +1,7 @@
 GO111MODULE := on
-DOCKER_TAG := $(or $(subst _,-,$(GITHUB_TAG_NAME)), latest)
-
+KUBECONFIG := $(shell pwd)/.kubeconfig
+DOCKER_TAG := $(or $(GITHUB_TAG_NAME),latest)
+HELM_REPO := "https://helm.metal-stack.io"
 
 all: provisioner lvmplugin
 
@@ -15,21 +16,21 @@ provisioner:
 	go build -tags netgo -o bin/csi-lvmplugin-provisioner cmd/provisioner/*.go
 	strip bin/csi-lvmplugin-provisioner
 
-.PHONY: tests
-tests: | start-test build-provisioner build-plugin do-test clean-test
-
-.PHONY: start-test
-start-test:
-	@if minikube status >/dev/null 2>/dev/null; then echo "a minikube is already running. Exiting ..."; exit 1; fi
-	@echo "Starting minikube testing setup ... please wait ..."
-	@./start-minikube-on-linux.sh >/dev/null 2>/dev/null
-	@kubectl config view --flatten --minify > tests/files/.kubeconfig
-	@minikube docker-env > tests/files/.dockerenv
-
-.PHONY: build-provisioner
-build-provisioner:
-	@sh -c '. ./tests/files/.dockerenv && docker build -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile'
-
-.PHONY: build-plugin
-build-plugin:
-	@sh -c '. ./tests/files/.dockerenv && docker build -t metalstack/lvmplugin:${DOCKER_TAG} . '
+.PHONY: test
+test:
+	@if ! which kind > /dev/null; then echo "kind needs to be installed"; exit 1; fi
+	@if ! kind get clusters | grep csi-driver-lvm > /dev/null; then \
+		kind create cluster \
+		  --name csi-driver-lvm \
+			--config tests/kind.yaml \
+			--kubeconfig $(KUBECONFIG); fi
+	@cd tests && docker build -t csi-bats . && cd -
+	@docker run -it \
+		-e DOCKER_TAG=$(DOCKER_TAG) \
+		-e HELM_REPO=$(HELM_REPO) \
+		-v "$(KUBECONFIG):/root/.kube/config" \
+		-v "$(PWD)/tests:/code" \
+		--network host \
+		--entrypoint bash \
+		csi-bats
+		#bats/test.bats

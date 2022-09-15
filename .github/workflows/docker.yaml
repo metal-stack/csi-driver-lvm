@@ -67,18 +67,16 @@ jobs:
         [ "${GITHUB_EVENT_NAME}" == 'pull_request' ] && echo "GITHUB_TAG_NAME=${GITHUB_HEAD_REF##*/}-integration" >> $GITHUB_ENV || true
         [ "${GITHUB_EVENT_NAME}" == 'release' ] && echo "GITHUB_TAG_NAME=${GITHUB_REF##*/}-integration" >> $GITHUB_ENV || true
         [ "${GITHUB_EVENT_NAME}" == 'push' ] && echo "GITHUB_TAG_NAME=latest-integration" >> $GITHUB_ENV || true
-        sudo apt-get install qemu-system-x86
+        for i in 100 101; do fallocate -l 1G loop${i}.img ; sudo losetup /dev/loop${i} loop${i}.img; done; sudo losetup -a
 
-    - name: Start minikube
-      uses: medyagh/setup-minikube@master
+    - name: Create k8s Kind Cluster
+      uses: helm/kind-action@v1.3.0
       with:
-        driver: qemu
+        install_only: true
 
     - name: Test
       run:
-        minikube ssh 'for i in 0 1; do fallocate -l 1G loop${i} ; sudo losetup -f loop${i}; sudo losetup -a ; done'
-        sudo apt-get install -y bats
-        bats ./tests/bats
+        make test
 
   build-platforms:
     name: Docker Build Platforms
