@@ -46,6 +46,5 @@ test: build-plugin build-provisioner
 		-v "$(KUBECONFIG):/root/.kube/config" \
 		-v "$(PWD)/tests:/code" \
 		--network host \
-		--entrypoint bash \
-		csi-bats
-		#bats/test.bats
+		csi-bats \
+		bats/test.bats
