@@ -14,7 +14,7 @@ For the special case of block volumes, the filesystem-expansion has to be perfor
 
 ## Installation ##
 
-Helm charts for installation are located in a separate repository called [helm-charts](https://github.com/metal-stack/helm-charts).
+**Helm charts for installation are located in a separate repository called [helm-charts](https://github.com/metal-stack/helm-charts). If you would like to contribute to the helm chart, please raise an issue or pull request there.**
 
 You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
 
