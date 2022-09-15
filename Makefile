@@ -31,7 +31,7 @@ build-provisioner:
 	docker build -t csi-driver-lvm-provisioner . -f cmd/provisioner/Dockerfile
 
 .PHONY: test
-test: # build-plugin build-provisioner
+test: build-plugin build-provisioner
 	@if ! which kind > /dev/null; then echo "kind needs to be installed"; exit 1; fi
 	@if ! kind get clusters | grep csi-driver-lvm > /dev/null; then \
 		kind create cluster \
