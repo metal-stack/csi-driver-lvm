@@ -41,7 +41,7 @@ jobs:
         install_only: true
 
     - name: Test
-      run:
+      run: |
         for i in 100 101; do fallocate -l 1G loop${i}.img ; sudo losetup /dev/loop${i} loop${i}.img; done
         sudo losetup -a
         make test

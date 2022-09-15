@@ -1,7 +1,7 @@
 #!/usr/bin/env bats -p
 
 @test "deploy csi-lvm-controller" {
-    run helm install --repo ${HELM_REPO} csi-driver-lvm csi-driver-lvm --wait --set pluginImage.tag=${DOCKER_TAG} --set provisionerImage.tag=${DOCKER_TAG} --set lvm.devicePattern="/dev/loop10*"
+    run helm install --repo ${HELM_REPO} csi-driver-lvm csi-driver-lvm --values values.yaml --wait
     [ "$status" -eq 0 ]
 }
 
