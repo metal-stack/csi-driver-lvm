@@ -62,6 +62,9 @@ jobs:
     needs: build
 
     steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
     - name: Prepare
       run: |
         [ "${GITHUB_EVENT_NAME}" == 'pull_request' ] && echo "GITHUB_TAG_NAME=${GITHUB_HEAD_REF##*/}-integration" >> $GITHUB_ENV || true
