@@ -1,7 +1,12 @@
 GO111MODULE := on
-DOCKER_TAG := $(or $(subst _,-,$(GITHUB_TAG_NAME)), latest)
-TEST_TAG := $(or $(subst .,-,$(subst _,-,$(GITHUB_TAG_NAME))), latest)
+KUBECONFIG := $(shell pwd)/.kubeconfig
+HELM_REPO := "https://helm.metal-stack.io"
 
+ifeq ($(CI),true)
+  DOCKER_TTY_ARG=
+else
+  DOCKER_TTY_ARG=t
+endif
 
 all: provisioner lvmplugin
 
@@ -13,58 +18,33 @@ lvmplugin:
 
 .PHONY: provisioner
 provisioner:
+	go mod tidy
 	go build -tags netgo -o bin/csi-lvmplugin-provisioner cmd/provisioner/*.go
 	strip bin/csi-lvmplugin-provisioner
 
-.PHONY: dockerbuildpush
-dockerbuildpush:
-	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile
-	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --push -t metalstack/lvmplugin:${DOCKER_TAG} .
-
-.PHONY: cidockerbuildpush
-cidockerbuildpush:
-	docker build -t metalstack/csi-lvmplugin-provisioner:${TEST_TAG} . -f cmd/provisioner/Dockerfile
-	docker build -t metalstack/lvmplugin:${TEST_TAG} .
-	docker push metalstack/lvmplugin:${TEST_TAG}
-	docker push metalstack/csi-lvmplugin-provisioner:${TEST_TAG}
-
-.PHONY: tests
-tests: | start-test build-provisioner build-plugin build-test do-test clean-test
-
-.PHONY: start-test
-start-test:
-	@if minikube status >/dev/null 2>/dev/null; then echo "a minikube is already running. Exiting ..."; exit 1; fi
-	@echo "Starting minikube testing setup ... please wait ..."
-	@./start-minikube-on-linux.sh >/dev/null 2>/dev/null
-	@kubectl config view --flatten --minify > tests/files/.kubeconfig
-	@minikube docker-env > tests/files/.dockerenv
+.PHONY: build-plugin
+build-plugin:
+	docker build -t csi-driver-lvm .
 
 .PHONY: build-provisioner
 build-provisioner:
-	@sh -c '. ./tests/files/.dockerenv && docker build -t metalstack/csi-lvmplugin-provisioner:${DOCKER_TAG} . -f cmd/provisioner/Dockerfile'
+	docker build -t csi-driver-lvm-provisioner . -f cmd/provisioner/Dockerfile
 
-.PHONY: build-plugin
-build-plugin:
-	@sh -c '. ./tests/files/.dockerenv && docker build -t metalstack/lvmplugin:${DOCKER_TAG} . '
-
-.PHONY: build-test
-build-test:
-	@cp -R helm tests/files
-	@sh -c '. ./tests/files/.dockerenv && docker build --build-arg docker_tag=${DOCKER_TAG} --build-arg devicepattern="/dev/loop[0-1]" --build-arg pullpolicy=IfNotPresent -t csi-lvm-tests:${DOCKER_TAG} tests' > /dev/null
-
-.PHONY: do-test
-do-test:
-	@sh -c '. ./tests/files/.dockerenv && docker run --rm csi-lvm-tests:${DOCKER_TAG} bats /bats'
-
-.PHONY: clean-test
-clean-test:
-	@rm tests/files/.dockerenv
-	@rm tests/files/.kubeconfig
-	@minikube delete
-
-.PHONY: metalci
-metalci: cidockerbuildpush
-	@cp -R helm tests/files
-	docker build --build-arg docker_tag=${TEST_TAG} --build-arg devicepattern='/dev/nvme[0-9]n[0-9]' --build-arg pullpolicy=Always -t csi-lvm-tests:${TEST_TAG} tests > /dev/null
-	docker run --rm csi-lvm-tests:${TEST_TAG} bats /bats
-
+.PHONY: test
+test: build-plugin build-provisioner
+	@if ! which kind > /dev/null; then echo "kind needs to be installed"; exit 1; fi
+	@if ! kind get clusters | grep csi-driver-lvm > /dev/null; then \
+		kind create cluster \
+		  --name csi-driver-lvm \
+			--config tests/kind.yaml \
+			--kubeconfig $(KUBECONFIG); fi
+	@kind --name csi-driver-lvm load docker-image csi-driver-lvm
+	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
+	@cd tests && docker build -t csi-bats . && cd -
+	docker run -i$(DOCKER_TTY_ARG) \
+		-e HELM_REPO=$(HELM_REPO) \
+		-v "$(KUBECONFIG):/root/.kube/config" \
+		-v "$(PWD)/tests:/code" \
+		--network host \
+		csi-bats \
+		--verbose-run --trace --timing bats/test.bats

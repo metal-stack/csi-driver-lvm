@@ -124,7 +124,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = CreateLVS(context.Background(), ns.vgName, volID, uint64(size), req.GetVolumeContext()["type"])
+		output, err = CreateLVS(ns.vgName, volID, uint64(size), req.GetVolumeContext()["type"])
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}
@@ -175,7 +175,7 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 	// ephemeral volumes start with "csi-"
 	if strings.HasPrefix(volID, "csi-") {
 		// remove ephemeral volume here
-		output, err := RemoveLVS(context.Background(), ns.vgName, volID)
+		output, err := RemoveLVS(ns.vgName, volID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to delete lv: %w output:%s", err, output)
 		}

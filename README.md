@@ -14,10 +14,12 @@ For the special case of block volumes, the filesystem-expansion has to be perfor
 
 ## Installation ##
 
+**Helm charts for installation are located in a separate repository called [helm-charts](https://github.com/metal-stack/helm-charts). If you would like to contribute to the helm chart, please raise an issue or pull request there.**
+
 You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
 
 ```bash
-helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
+helm install --repo https://helm.metal-stack.io mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
 ```
 
 Now you can use one of following storageClasses:
@@ -25,6 +27,8 @@ Now you can use one of following storageClasses:
 * `csi-driver-lvm-linear`
 * `csi-driver-lvm-mirror`
 * `csi-driver-lvm-striped`
+
+To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclasses, set helm-chart value `compat03x=true`.
 
 ## Migration ##
 
@@ -40,7 +44,7 @@ TL;DR:
 
 ```bash
 ./start-minikube-on-linux.sh
-helm install mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/loop[0-1]'
+helm install --repo https://helm.metal-stack.io mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/loop[0-1]'
 ```
 
 ### Start minikube and create dummy volumes ###
@@ -76,7 +80,7 @@ Replace metalstack/lvmplugin:latest image in helm/csi-driver-lvm/values.yaml
 ### Deploy ###
 
 ```bash
-helm install mytest helm/csi-driver-lvm
+helm install --repo https://helm.metal-stack.io mytest helm/csi-driver-lvm
 ```
 
 ### Test ###
