@@ -24,9 +24,9 @@ helm install --repo https://helm.metal-stack.io mytest helm/csi-driver-lvm --set
 
 Now you can use one of following storageClasses:
 
-* `csi-lvm-sc-mirror`
-* `csi-lvm-sc-linear`
-* `csi-lvm-sc-striped`
+* `csi-driver-lvm-linear`
+* `csi-driver-lvm-mirror`
+* `csi-driver-lvm-striped`
 
 ## Migration ##
 
