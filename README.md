@@ -28,6 +28,8 @@ Now you can use one of following storageClasses:
 * `csi-driver-lvm-mirror`
 * `csi-driver-lvm-striped`
 
+To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclasses, set helm-chart value `compat03x=true`.
+
 ## Migration ##
 
 If you want to migrate your existing PVC to / from csi-driver-lvm, you can use [korb](https://github.com/BeryJu/korb).
