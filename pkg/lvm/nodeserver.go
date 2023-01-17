@@ -143,7 +143,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
 
-		output, err := mountLV(req.GetVolumeId(), targetPath, ns.vgName)
+		output, err := mountLV(req.GetVolumeId(), targetPath, ns.vgName, req.GetVolumeCapability().GetMount().GetFsType())
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}

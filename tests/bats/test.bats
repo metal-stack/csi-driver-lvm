@@ -108,6 +108,33 @@
     [ "${lines[0]}" = "persistentvolumeclaim \"lvm-pvc-block\" deleted" ]
     [ "${lines[1]}" = "persistentvolumeclaim \"lvm-pvc-linear\" deleted" ]
 }
+
+@test "deploy inline xfs pod with ephemeral volume" {
+    run sleep 10
+    run kubectl apply -f files/xfs.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod/volume-test-inline-xfs created" ]
+}
+
+@test "inline xfs pod running" {
+    run kubectl wait --for=condition=ready pod/volume-test-inline-xfs --timeout=180s
+    run kubectl get pods volume-test-inline-xfs -o jsonpath="{.metadata.name},{.status.phase}"
+    [ "$status" -eq 0 ]
+    [ "$output" = "volume-test-inline-xfs,Running" ]
+}
+
+@test "check fsType" {
+    run kubectl exec -it volume-test-inline-xfs -c inline -- sh -c "mount | grep /data"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"xfs"* ]]
+}
+
+@test "delete inline xfs linear pod" {
+    run kubectl delete -f files/xfs.yaml
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = "pod \"volume-test-inline-xfs\" deleted" ]
+}
+
 @test "clean up " {
     run sleep 60
     run helm uninstall csi-driver-lvm

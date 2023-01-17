@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -78,12 +79,17 @@ type volumeAction struct {
 }
 
 const (
-	linearType       = "linear"
-	stripedType      = "striped"
-	mirrorType       = "mirror"
-	actionTypeCreate = "create"
-	actionTypeDelete = "delete"
-	pullIfNotPresent = "ifnotpresent"
+	linearType         = "linear"
+	stripedType        = "striped"
+	mirrorType         = "mirror"
+	actionTypeCreate   = "create"
+	actionTypeDelete   = "delete"
+	pullIfNotPresent   = "ifnotpresent"
+	fsTypeRegexpString = `TYPE="(\w+)"`
+)
+
+var (
+	fsTypeRegexp = regexp.MustCompile(fsTypeRegexpString)
 )
 
 // NewLvmDriver creates the driver
@@ -143,23 +149,42 @@ func (lvm *Lvm) Run() error {
 	return nil
 }
 
-func mountLV(lvname, mountPath string, vgName string) (string, error) {
+func mountLV(lvname, mountPath string, vgName string, fsType string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 
 	formatted := false
+	forceFormat := false
+	if fsType == "" {
+		fsType = "ext4"
+	}
 	// check for already formatted
 	cmd := exec.Command("blkid", lvPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		klog.Infof("unable to check if %s is already formatted:%v", lvPath, err)
 	}
-	if strings.Contains(string(out), "ext4") {
-		formatted = true
+	matches := fsTypeRegexp.FindStringSubmatch(string(out))
+	if len(matches) > 1 {
+		if matches[1] == "xfs_external_log" { // If old xfs signature was found
+			forceFormat = true
+		} else {
+			if matches[1] != fsType {
+				return string(out), fmt.Errorf("target fsType is %s but %s found", fsType, matches[1])
+			}
+
+			formatted = true
+		}
 	}
 
 	if !formatted {
-		klog.Infof("formatting with mkfs.ext4 %s", lvPath)
-		cmd = exec.Command("mkfs.ext4", lvPath)
+		formatArgs := []string{}
+		if forceFormat {
+			formatArgs = append(formatArgs, "-f")
+		}
+		formatArgs = append(formatArgs, lvPath)
+
+		klog.Infof("formatting with mkfs.%s %s", fsType, strings.Join(formatArgs, " "))
+		cmd = exec.Command(fmt.Sprintf("mkfs.%s", fsType), formatArgs...) //nolint:gosec
 		out, err = cmd.CombinedOutput()
 		if err != nil {
 			return string(out), fmt.Errorf("unable to format lv:%s err:%w", lvname, err)
@@ -172,7 +197,7 @@ func mountLV(lvname, mountPath string, vgName string) (string, error) {
 	}
 
 	// --make-shared is required that this mount is visible outside this container.
-	mountArgs := []string{"--make-shared", "-t", "ext4", lvPath, mountPath}
+	mountArgs := []string{"--make-shared", "-t", fsType, lvPath, mountPath}
 	klog.Infof("mountlv command: mount %s", mountArgs)
 	cmd = exec.Command("mount", mountArgs...)
 	out, err = cmd.CombinedOutput()
