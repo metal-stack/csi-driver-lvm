@@ -500,7 +500,7 @@ func CreateLVS(vg string, name string, size uint64, lvmType string) (string, err
 
 	// TODO: check available capacity, fail if request doesn't fit
 
-	args := []string{"-v", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
+	args := []string{"-v", "--yes", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
 
 	pvs, err := pvCount(vg)
 	if err != nil {
