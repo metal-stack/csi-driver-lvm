@@ -25,7 +25,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: Set up Go 1.18
+    - name: Set up Go 1.19
       uses: actions/setup-go@v3
       with:
         go-version: 1.19
@@ -42,6 +42,11 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+
+    - name: Set up Go 1.19
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.19
 
     - name: Create k8s Kind Cluster
       uses: helm/kind-action@v1.5.0
@@ -71,6 +76,11 @@ jobs:
 
     - name: Checkout
       uses: actions/checkout@v3
+
+    - name: Set up Go 1.19
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.19
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
