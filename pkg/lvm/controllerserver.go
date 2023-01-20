@@ -138,7 +138,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		namespace:        cs.namespace,
 		vgName:           cs.vgName,
 	}
-	if err := createProvisionerPod(va); err != nil {
+	if err := createProvisionerPod(ctx, va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 
 	volID := req.GetVolumeId()
 
-	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(context.Background(), volID, metav1.GetOptions{})
+	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(ctx, volID, metav1.GetOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
@@ -177,7 +177,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 
 	klog.V(4).Infof("from node %s ", node)
 
-	_, err = cs.kubeClient.CoreV1().Nodes().Get(context.Background(), node, metav1.GetOptions{})
+	_, err = cs.kubeClient.CoreV1().Nodes().Get(ctx, node, metav1.GetOptions{})
 	if err != nil {
 		if k8serror.IsNotFound(err) {
 			klog.Infof("node %s not found anymore. Assuming volume %s is gone for good.", node, volID)
@@ -198,7 +198,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		namespace:        cs.namespace,
 		vgName:           cs.vgName,
 	}
-	if err := createProvisionerPod(va); err != nil {
+	if err := createProvisionerPod(ctx, va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)
 		return nil, err
 	}
