@@ -48,3 +48,7 @@ test: build-plugin build-provisioner
 		--network host \
 		csi-bats \
 		--verbose-run --trace --timing bats/test.bats
+
+.PHONY: test-cleanup
+test-cleanup:
+	@kind delete cluster --name csi-driver-lvm

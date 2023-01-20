@@ -225,7 +225,7 @@ func umountLV(targetPath string) {
 	}
 }
 
-func createProvisionerPod(va volumeAction) (err error) {
+func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 	if va.name == "" || va.nodeName == "" {
 		return fmt.Errorf("invalid empty name or path or node")
 	}
@@ -364,13 +364,13 @@ func createProvisionerPod(va volumeAction) (err error) {
 
 	// If it already exists due to some previous errors, the pod will be cleaned up later automatically
 	// https://github.com/rancher/local-path-provisioner/issues/27
-	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(context.Background(), provisionerPod, metav1.CreateOptions{})
+	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(ctx, provisionerPod, metav1.CreateOptions{})
 	if err != nil && !k8serror.IsAlreadyExists(err) {
 		return err
 	}
 
 	defer func() {
-		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(context.Background(), provisionerPod.Name, metav1.DeleteOptions{})
+		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(ctx, provisionerPod.Name, metav1.DeleteOptions{})
 		if e != nil {
 			klog.Errorf("unable to delete the provisioner pod: %v", e)
 		}
@@ -379,7 +379,7 @@ func createProvisionerPod(va volumeAction) (err error) {
 	completed := false
 	retrySeconds := 60
 	for i := 0; i < retrySeconds; i++ {
-		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(context.Background(), provisionerPod.Name, metav1.GetOptions{})
+		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, provisionerPod.Name, metav1.GetOptions{})
 		if pod.Status.Phase == v1.PodFailed {
 			// pod terminated in time, but with failure
 			// return ResourceExhausted so the requesting pod can be rescheduled to anonther node
@@ -500,7 +500,7 @@ func CreateLVS(vg string, name string, size uint64, lvmType string) (string, err
 
 	// TODO: check available capacity, fail if request doesn't fit
 
-	args := []string{"-v", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
+	args := []string{"-v", "--yes", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
 
 	pvs, err := pvCount(vg)
 	if err != nil {
