@@ -38,50 +38,6 @@ If you want to migrate your existing PVC to / from csi-driver-lvm, you can use [
 
 * implement CreateSnapshot(), ListSnapshots(), DeleteSnapshot()
 
-## Development ###
-
-TL;DR:
-
-```bash
-./start-minikube-on-linux.sh
-helm install --repo https://helm.metal-stack.io mytest helm/csi-driver-lvm --set lvm.devicePattern='/dev/loop[0-1]'
-```
-
-### Start minikube and create dummy volumes ###
-
-```bash
-minikube start --memory 4g
-minikube ssh 'for i in 0 1; do fallocate -l 1G loop${i} ; sudo losetup -f loop${i}; sudo losetup -a ; done'
-```
-
-On minikube we have to copy a "real" losetup:
-
-In minikube losetup is a symlink to busybox.
-
-The busybox implentation of losetup lacks some flags on which the kubernetes currently depends on.
-(see <https://github.com/kubernetes/kubernetes/issues/83265> )
-
-```bash
- minikube ssh 'sudo rm /sbin/losetup'
- scp -o 'StrictHostKeyChecking=no' -i $(minikube ssh-key) /usr/sbin/losetup  docker@$(minikube ip):/tmp/losetup
- minikube ssh 'sudo mv /tmp/losetup /sbin/losetup'
-```
-
-### Build ###
-
-```bash
-make
-docker build
-docker push
-```
-
-Replace metalstack/lvmplugin:latest image in helm/csi-driver-lvm/values.yaml
-
-### Deploy ###
-
-```bash
-helm install --repo https://helm.metal-stack.io mytest helm/csi-driver-lvm
-```
 
 ### Test ###
 
@@ -98,4 +54,29 @@ kubectl delete -f examples/csi-pvc-raw.yaml
 
 kubectl delete -f  examples/csi-app.yaml
 kubectl delete -f examples/csi-pvc.yaml
+```
+
+## Development ###
+
+In order to run the integration tests locally, you need to create to loop devices on your host machine. Make sure the loop device mount paths are not used on your system (default path is `/dev/loop10{1,2}`).
+
+You can create these loop devices like this:
+
+```bash
+for i in 100 101; do fallocate -l 1G loop${i}.img ; sudo losetup /dev/loop${i} loop${i}.img; done
+sudo losetup -a
+# use this for recreation or cleanup
+# for i in 100 101; do sudo losetup -d /dev/loop${i}; rm -f loop${i}.img; done
+```
+
+You can then run the tests against a kind cluster, running:
+
+```bash
+make test
+```
+
+To recreate or cleanup the kind cluster:
+
+```bash
+make test-cleanup
 ```
