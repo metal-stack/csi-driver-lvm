@@ -191,7 +191,7 @@ func mountLV(lvname, mountPath string, vgName string, fsType string) (string, er
 		}
 	}
 
-	err = os.MkdirAll(mountPath, 0777)
+	err = os.MkdirAll(mountPath, 0777|os.ModeSetgid)
 	if err != nil {
 		return string(out), fmt.Errorf("unable to create mount directory for lv:%s err:%w", lvname, err)
 	}
@@ -207,7 +207,7 @@ func mountLV(lvname, mountPath string, vgName string, fsType string) (string, er
 			return string(out), fmt.Errorf("unable to mount %s to %s err:%w output:%s", lvPath, mountPath, err, out)
 		}
 	}
-	err = os.Chmod(mountPath, 0777)
+	err = os.Chmod(mountPath, 0777|os.ModeSetgid)
 	if err != nil {
 		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%w", mountPath, err)
 	}
@@ -234,7 +234,7 @@ func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
 			return string(out), fmt.Errorf("unable to mount %s to %s err:%w output:%s", lvPath, mountPath, err, out)
 		}
 	}
-	err = os.Chmod(mountPath, 0777)
+	err = os.Chmod(mountPath, 0777|os.ModeSetgid)
 	if err != nil {
 		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%w", mountPath, err)
 	}
