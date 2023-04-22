@@ -62,16 +62,19 @@ kind:
 rm-kind:
 	@kind delete cluster --name csi-driver-lvm
 
+RERUN ?= 1
 .PHONY: test
 test: build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
 	@cd tests && docker build -t csi-bats . && cd -
+	@for i in {1..$(RERUN)}; do \
 	docker run -i$(DOCKER_TTY_ARG) \
 		-e HELM_REPO=$(HELM_REPO) \
 		-v "$(KUBECONFIG):/root/.kube/config" \
 		-v "$(PWD)/tests:/code" \
 		--network host \
 		csi-bats \
-		--verbose-run --trace --timing bats/test.bats
+		--verbose-run --trace --timing bats/test.bats ; \
+	done
 
 .PHONY: test-cleanup
 test-cleanup: rm-loop100 rm-loop101 rm-kind
