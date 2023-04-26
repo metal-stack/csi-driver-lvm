@@ -151,7 +151,6 @@ func (lvm *Lvm) Run() error {
 
 func mountLV(lvname, mountPath string, vgName string, fsType string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
-
 	formatted := false
 	forceFormat := false
 	if fsType == "" {
@@ -248,6 +247,26 @@ func umountLV(targetPath string) {
 	if err != nil {
 		klog.Errorf("unable to umount %s output:%s err:%w", targetPath, string(out), err)
 	}
+}
+
+func activateLV(lvname, vgName string) (string, error) {
+	if out, err := lvScan(); err != nil {
+		return strings.TrimSpace(string(out)), fmt.Errorf("refresh lvm metadata failed, err:%s %v", out, err)
+	}
+	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
+	cmd := exec.Command("lvchange", "-ay", lvPath)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func deactivateLV(lvname, vgName string) (string, error) {
+	if out, err := lvScan(); err != nil {
+		return strings.TrimSpace(string(out)), fmt.Errorf("refresh lvm metadata failed, err:%s %v", out, err)
+	}
+	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
+	cmd := exec.Command("lvchange", "-an", lvPath)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
 }
 
 func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
@@ -441,21 +460,6 @@ func vgExists(vgname string) bool {
 	return vgname == strings.TrimSpace(string(out))
 }
 
-// VgActivate execute vgchange -ay to activate all volumes of the volume group
-func vgActivate() {
-	// scan for vgs and activate if any
-	cmd := exec.Command("vgscan")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		klog.Infof("unable to scan for volumegroups:%s %v", out, err)
-	}
-	cmd = exec.Command("vgchange", "-ay")
-	_, err = cmd.CombinedOutput()
-	if err != nil {
-		klog.Infof("unable to activate volumegroups:%s %v", out, err)
-	}
-}
-
 func devices(devicesPattern []string) (devices []string, err error) {
 	for _, devicePattern := range devicesPattern {
 		klog.Infof("search devices: %s ", devicePattern)
@@ -476,14 +480,10 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 		return name, fmt.Errorf("invalid empty flag %v", dp)
 	}
 
-	vgexists := vgExists(name)
-	if vgexists {
-		klog.Infof("volumegroup: %s already exists\n", name)
-		return name, nil
+	if out, err := lvScan(); err != nil {
+		return strings.TrimSpace(string(out)), fmt.Errorf("refresh lvm metadata failed, err:%s %v", out, err)
 	}
-	vgActivate()
-	// now check again for existing vg again
-	vgexists = vgExists(name)
+	vgexists := vgExists(name)
 	if vgexists {
 		klog.Infof("volumegroup: %s already exists\n", name)
 		return name, nil
@@ -509,7 +509,9 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 // CreateLVS creates the new volume
 // used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
 func CreateLVS(vg string, name string, size uint64, lvmType string) (string, error) {
-
+	if out, err := lvScan(); err != nil {
+		return strings.TrimSpace(string(out)), fmt.Errorf("refresh lvm metadata failed, err:%s %v", out, err)
+	}
 	if lvExists(vg, name) {
 		klog.Infof("logicalvolume: %s already exists\n", name)
 		return name, nil
@@ -555,6 +557,12 @@ func CreateLVS(vg string, name string, size uint64, lvmType string) (string, err
 	klog.Infof("lvcreate %s", args)
 	cmd := exec.Command("lvcreate", args...)
 	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), err
+	}
+	lvPath := fmt.Sprintf("/dev/%s/%s", vg, name)
+	cmd = exec.Command("lvchange", "-an", lvPath)
+	out, err = cmd.CombinedOutput()
 	return string(out), err
 }
 
@@ -570,6 +578,9 @@ func lvExists(vg string, name string) bool {
 }
 
 func extendLVS(vg string, name string, size uint64, isBlock bool) (string, error) {
+	if out, err := lvScan(); err != nil {
+		return strings.TrimSpace(string(out)), fmt.Errorf("refresh lvm metadata failed, err:%s %v", out, err)
+	}
 	if !lvExists(vg, name) {
 		return "", fmt.Errorf("logical volume %s does not exist", name)
 	}
@@ -591,7 +602,9 @@ func extendLVS(vg string, name string, size uint64, isBlock bool) (string, error
 
 // RemoveLVS executes lvremove
 func RemoveLVS(vg string, name string) (string, error) {
-
+	if out, err := lvScan(); err != nil {
+		return strings.TrimSpace(string(out)), fmt.Errorf("refresh lvm metadata failed, err:%s %v", out, err)
+	}
 	if !lvExists(vg, name) {
 		return fmt.Sprintf("logical volume %s does not exist. Assuming it has already been deleted.", name), nil
 	}
@@ -615,4 +628,20 @@ func pvCount(vgname string) (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func lvScan() (string, error) {
+	klog.Infof("sync")
+	cmd := exec.Command("sync")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return strings.TrimSpace(string(out)), err
+	}
+	klog.Infof("lvscan")
+	cmd = exec.Command("lvscan")
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		return strings.TrimSpace(string(out)), err
+	}
+	return "", nil
 }

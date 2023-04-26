@@ -19,7 +19,6 @@ package lvm
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"context"
@@ -44,20 +43,15 @@ type nodeServer struct {
 }
 
 func newNodeServer(nodeID string, ephemeral bool, maxVolumesPerNode int64, devicesPattern string, vgName string) *nodeServer {
-
 	// revive existing volumes at start of node server
+	if out, err := lvScan(); err != nil {
+		klog.Errorf("refresh lvm metadata failed, err:%s %v", out, err)
+		os.Exit(1)
+	}
 	vgexists := vgExists(vgName)
 	if !vgexists {
 		klog.Infof("volumegroup: %s not found\n", vgName)
-		vgActivate()
-		// now check again for existing vg again
 	}
-	cmd := exec.Command("lvchange", "-ay", vgName)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		klog.Infof("unable to activate logical volumes:%s %v", out, err)
-	}
-
 	return &nodeServer{
 		nodeID:            nodeID,
 		ephemeral:         ephemeral,
@@ -81,11 +75,6 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 
 	targetPath := req.GetTargetPath()
-
-	if req.GetVolumeCapability().GetBlock() != nil &&
-		req.GetVolumeCapability().GetMount() != nil {
-		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
-	}
 
 	var accessTypeMount, accessTypeBlock bool
 	cap := req.GetVolumeCapability()
@@ -132,8 +121,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		klog.V(4).Infof("ephemeral mode: created volume: %s, size: %d", volID, size)
 	}
 
-	if req.GetVolumeCapability().GetBlock() != nil {
-
+	if accessTypeBlock {
 		output, err := bindMountLV(req.GetVolumeId(), targetPath, ns.vgName)
 		if err != nil {
 			return nil, fmt.Errorf("unable to bind mount lv: %w output:%s", err, output)
@@ -141,15 +129,13 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		// FIXME: VolumeCapability is a struct and not the size
 		klog.Infof("block lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
 
-	} else if req.GetVolumeCapability().GetMount() != nil {
-
+	} else if accessTypeMount {
 		output, err := mountLV(req.GetVolumeId(), targetPath, ns.vgName, req.GetVolumeCapability().GetMount().GetFsType())
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
 		klog.Infof("mounted lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
-
 	}
 
 	return &csi.NodePublishVolumeResponse{}, nil
@@ -199,7 +185,13 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 		return nil, status.Error(codes.InvalidArgument, "Volume Capability missing in request")
 	}
 
-	return &csi.NodeStageVolumeResponse{}, nil
+	lvname := req.GetVolumeId()
+	out, err := activateLV(lvname, ns.vgName)
+	if err != nil {
+		klog.Errorf("unable to activate %s output:%s err:%w", lvname, string(out), err)
+	}
+
+	return &csi.NodeStageVolumeResponse{}, err
 }
 
 func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
@@ -212,7 +204,13 @@ func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
-	return &csi.NodeUnstageVolumeResponse{}, nil
+	lvname := req.GetVolumeId()
+	out, err := deactivateLV(lvname, ns.vgName)
+	if err != nil {
+		klog.Errorf("unable to deactivate %s output:%s err:%w", lvname, string(out), err)
+	}
+
+	return &csi.NodeUnstageVolumeResponse{}, err
 }
 
 func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
@@ -322,8 +320,7 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 	output, err := extendLVS(ns.vgName, volID, uint64(capacity), isBlock)
 
 	if err != nil {
-		return nil, fmt.Errorf("unable to umount lv: %w output:%s", err, output)
-
+		return nil, fmt.Errorf("unable to extend lv: %w output:%s", err, output)
 	}
 
 	return &csi.NodeExpandVolumeResponse{
