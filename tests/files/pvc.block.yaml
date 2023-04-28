@@ -10,15 +10,3 @@ spec:
   resources:
     requests:
       storage: 10Mi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: lvm-pvc-linear
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: csi-driver-lvm-linear
-  resources:
-    requests:
-      storage: 10Mi

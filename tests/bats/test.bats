@@ -1,126 +1,115 @@
 #!/usr/bin/env bats -p
 
 @test "deploy csi-lvm-controller" {
-    run helm install --repo ${HELM_REPO} csi-driver-lvm csi-driver-lvm --values values.yaml --wait
+    run helm upgrade --install --repo ${HELM_REPO} csi-driver-lvm csi-driver-lvm --values values.yaml --wait --timeout=120s
     [ "$status" -eq 0 ]
 }
 
 @test "deploy inline pod with ephemeral volume" {
-    run sleep 10
-    run kubectl apply -f files/inline.yaml
+    run kubectl apply -f files/pod.inline.vol.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "pod/volume-test-inline created" ]
 }
 
 @test "inline pod running" {
-    run kubectl wait --for=condition=ready pod/volume-test-inline --timeout=180s
-    run kubectl get pods volume-test-inline -o jsonpath="{.metadata.name},{.status.phase}"
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.inline.vol.yaml --timeout=10s
     [ "$status" -eq 0 ]
-    [ "$output" = "volume-test-inline,Running" ]
 }
 
 @test "delete inline linear pod" {
-    run kubectl delete -f files/inline.yaml
+    run kubectl delete -f files/pod.inline.vol.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "pod \"volume-test-inline\" deleted" ]
 }
 
-@test "create pvc" {
-    run kubectl apply -f files/pvc.yaml
+@test "create pvc linear" {
+    run kubectl apply -f files/pvc.linear.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "persistentvolumeclaim/lvm-pvc-block created" ]
-    [ "${lines[1]}" = "persistentvolumeclaim/lvm-pvc-linear created" ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.linear.yaml --timeout=10s
+    [ "$status" -eq 0 ]
 }
 
 @test "deploy linear pod" {
-    run kubectl apply -f files/linear.yaml
+    run kubectl apply -f files/pod.linear.vol.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "pod/volume-test created" ]
-}
-
-@test "deploy block pod" {
-    run kubectl apply -f files/block.yaml
-    [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "pod/volume-test-block created" ]
-}
-
-@test "linear pvc bound" {
-    run kubectl wait --for=condition=ready pod/volume-test --timeout=180s
-    run kubectl get pvc lvm-pvc-linear -o jsonpath="{.metadata.name},{.status.phase}"
-    [ "$status" -eq 0 ]
-    [ "$output" = "lvm-pvc-linear,Bound" ]
 }
 
 @test "linear pod running" {
-    run kubectl get pods volume-test -o jsonpath="{.metadata.name},{.status.phase}"
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.linear.vol.yaml --timeout=10s
     [ "$status" -eq 0 ]
-    [ "$output" = "volume-test,Running" ]
 }
 
-@test "block pvc bound" {
-    run kubectl wait --for=condition=ready pod/volume-test-block --timeout=180s
-    run kubectl get pvc lvm-pvc-block -o jsonpath="{.metadata.name},{.status.phase}"
+@test "pvc linear bound" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Bound -f files/pvc.linear.yaml --timeout=10s
     [ "$status" -eq 0 ]
-    [ "$output" = "lvm-pvc-block,Bound" ]
+}
+
+@test "resize linear pvc" {
+    run kubectl apply -f files/pvc.linear.resize.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.capacity.storage}'=20Mi -f files/pvc.linear.resize.yaml --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "create block pvc" {
+    run kubectl apply -f files/pvc.block.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.block.yaml --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy block pod" {
+    run kubectl apply -f files/pod.block.vol.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
 }
 
 @test "block pod running" {
-    run kubectl get pods volume-test-block -o jsonpath="{.metadata.name},{.status.phase}"
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.block.vol.yaml --timeout=10s
     [ "$status" -eq 0 ]
-    [ "$output" = "volume-test-block,Running" ]
 }
 
-@test "resize volume requests" {
-    run kubectl apply -f files/pvc-resize.yaml
+@test "pvc block bound" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Bound -f files/pvc.block.yaml --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "persistentvolumeclaim/lvm-pvc-block configured" ]
-    [ "${lines[1]}" = "persistentvolumeclaim/lvm-pvc-linear configured" ]
 }
 
-@test "check new linear volume size" {
-    run sleep 90
-    run kubectl get pvc lvm-pvc-linear -o jsonpath='{.status.capacity.storage}'
+@test "resize block pvc" {
+    run kubectl apply -f files/pvc.block.resize.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "$output" = "20Mi" ]
-}
 
-@test "check new block volume size" {
-    run kubectl get pvc lvm-pvc-block -o jsonpath='{.status.capacity.storage}'
+    run kubectl wait --for=jsonpath='{.status.capacity.storage}'=20Mi -f files/pvc.block.resize.yaml --timeout=10s
     [ "$status" -eq 0 ]
-    [ "$output" = "20Mi" ]
 }
 
 @test "delete linear pod" {
-    run kubectl delete -f files/linear.yaml
+    run kubectl delete -f files/pod.linear.vol.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "pod \"volume-test\" deleted" ]
+}
+
+@test "delete resized linear pvc" {
+    run kubectl delete -f files/pvc.linear.resize.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
 }
 
 @test "delete block pod" {
-    run kubectl delete -f files/block.yaml
+    run kubectl delete -f files/pod.block.vol.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "pod \"volume-test-block\" deleted" ]
 }
 
-@test "delete pvc" {
-    run kubectl delete -f files/pvc.yaml
+@test "delete resized block pvc" {
+    run kubectl delete -f files/pvc.block.resize.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "persistentvolumeclaim \"lvm-pvc-block\" deleted" ]
-    [ "${lines[1]}" = "persistentvolumeclaim \"lvm-pvc-linear\" deleted" ]
 }
 
 @test "deploy inline xfs pod with ephemeral volume" {
-    run sleep 10
-    run kubectl apply -f files/xfs.yaml
+    run kubectl apply -f files/pod.inline.vol.xfs.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "pod/volume-test-inline-xfs created" ]
 }
 
 @test "inline xfs pod running" {
-    run kubectl wait --for=condition=ready pod/volume-test-inline-xfs --timeout=180s
-    run kubectl get pods volume-test-inline-xfs -o jsonpath="{.metadata.name},{.status.phase}"
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.inline.vol.xfs.yaml --timeout=10s
     [ "$status" -eq 0 ]
-    [ "$output" = "volume-test-inline-xfs,Running" ]
 }
 
 @test "check fsType" {
@@ -130,12 +119,14 @@
 }
 
 @test "delete inline xfs linear pod" {
-    run kubectl delete -f files/xfs.yaml
+    run kubectl delete -f files/pod.inline.vol.xfs.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
-    [ "${lines[0]}" = "pod \"volume-test-inline-xfs\" deleted" ]
 }
 
-@test "clean up " {
-    run sleep 60
-    run helm uninstall csi-driver-lvm
+@test "delete csi-lvm-controller" {
+    echo "⏳ Wait 10s for all PVCs to be cleaned up..." >&3
+    sleep 10
+
+    run helm uninstall csi-driver-lvm --wait --timeout=30s
+    [ "$status" -eq 0 ]
 }

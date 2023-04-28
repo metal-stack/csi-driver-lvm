@@ -30,8 +30,25 @@ build-plugin:
 build-provisioner:
 	docker build -t csi-driver-lvm-provisioner . -f cmd/provisioner/Dockerfile
 
-.PHONY: test
-test: build-plugin build-provisioner
+/dev/loop%:
+	@fallocate --length 1G loop$*.img
+ifndef GITHUB_ACTIONS
+	@sudo mknod $@ b 7 $*
+endif
+	@sudo losetup $@ loop$*.img
+	@sudo losetup $@
+
+rm-loop%:
+	@sudo losetup -d /dev/loop$* || true
+	@! losetup /dev/loop$*
+	@sudo rm -f /dev/loop$*
+	@rm loop$*.img
+# If removing this loop device fails, you may need to:
+# 	sudo dmsetup info
+# 	sudo dmsetup remove <DEVICE_NAME>
+
+.PHONY: kind
+kind:
 	@if ! which kind > /dev/null; then echo "kind needs to be installed"; exit 1; fi
 	@if ! kind get clusters | grep csi-driver-lvm > /dev/null; then \
 		kind create cluster \
@@ -40,15 +57,24 @@ test: build-plugin build-provisioner
 			--kubeconfig $(KUBECONFIG); fi
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
+
+.PHONY: rm-kind
+rm-kind:
+	@kind delete cluster --name csi-driver-lvm
+
+RERUN ?= 1
+.PHONY: test
+test: build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
 	@cd tests && docker build -t csi-bats . && cd -
+	@for i in {1..$(RERUN)}; do \
 	docker run -i$(DOCKER_TTY_ARG) \
 		-e HELM_REPO=$(HELM_REPO) \
 		-v "$(KUBECONFIG):/root/.kube/config" \
 		-v "$(PWD)/tests:/code" \
 		--network host \
 		csi-bats \
-		--verbose-run --trace --timing bats/test.bats
+		--verbose-run --trace --timing bats/test.bats ; \
+	done
 
 .PHONY: test-cleanup
-test-cleanup:
-	@kind delete cluster --name csi-driver-lvm
+test-cleanup: rm-loop100 rm-loop101 rm-kind

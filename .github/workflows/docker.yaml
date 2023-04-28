@@ -55,8 +55,6 @@ jobs:
 
     - name: Test
       run: |
-        for i in 100 101; do fallocate -l 1G loop${i}.img ; sudo losetup /dev/loop${i} loop${i}.img; done
-        sudo losetup -a
         make test
 
   build-platforms:
@@ -65,9 +63,12 @@ jobs:
     needs:
       - lint
       - test
+    env:
+      DOCKER_REGISTRY_TOKEN: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
 
     steps:
     - name: Log in to the container registry
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: docker/login-action@v2
       with:
         registry: ${{ env.REGISTRY }}
@@ -75,23 +76,28 @@ jobs:
         password: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
 
     - name: Checkout
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: actions/checkout@v3
 
     - name: Set up Go 1.19
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: actions/setup-go@v3
       with:
         go-version: 1.19
 
     - name: Set up Docker Buildx
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: docker/setup-buildx-action@v2
 
     - name: Make tag
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       run: |
         [ "${GITHUB_EVENT_NAME}" == 'pull_request' ] && echo "tag=${GITHUB_HEAD_REF##*/}" >> $GITHUB_ENV || true
         [ "${GITHUB_EVENT_NAME}" == 'release' ] && echo "tag=${GITHUB_REF##*/}" >> $GITHUB_ENV || true
         [ "${GITHUB_EVENT_NAME}" == 'push' ] && echo "tag=latest" >> $GITHUB_ENV || true
 
     - name: Build and push image
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: docker/build-push-action@v3
       with:
         context: .
@@ -100,6 +106,7 @@ jobs:
         platforms: linux/amd64,linux/arm64,linux/arm/v7
 
     - name: Build and push provisioner image
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: docker/build-push-action@v3
       with:
         context: .

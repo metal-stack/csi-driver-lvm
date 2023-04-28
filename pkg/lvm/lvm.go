@@ -45,6 +45,7 @@ type Lvm struct {
 	nodeID            string
 	version           string
 	endpoint          string
+	hostWritePath     string
 	ephemeral         bool
 	maxVolumesPerNode int64
 	devicesPattern    string
@@ -76,6 +77,7 @@ type volumeAction struct {
 	kubeClient       kubernetes.Clientset
 	namespace        string
 	vgName           string
+	hostWritePath    string
 }
 
 const (
@@ -93,7 +95,7 @@ var (
 )
 
 // NewLvmDriver creates the driver
-func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*Lvm, error) {
+func NewLvmDriver(driverName, nodeID, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*Lvm, error) {
 	if driverName == "" {
 		return nil, fmt.Errorf("no driver name provided")
 	}
@@ -123,6 +125,7 @@ func NewLvmDriver(driverName, nodeID, endpoint string, ephemeral bool, maxVolume
 		version:           vendorVersion,
 		nodeID:            nodeID,
 		endpoint:          endpoint,
+		hostWritePath:     hostWritePath,
 		ephemeral:         ephemeral,
 		maxVolumesPerNode: maxVolumesPerNode,
 		devicesPattern:    devicesPattern,
@@ -139,7 +142,7 @@ func (lvm *Lvm) Run() error {
 	// Create GRPC servers
 	lvm.ids = newIdentityServer(lvm.name, lvm.version)
 	lvm.ns = newNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
-	lvm.cs, err = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
+	lvm.cs, err = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.hostWritePath, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
 	if err != nil {
 		return err
 	}
@@ -360,7 +363,7 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 					Name: "lvmbackup",
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
-							Path: "/etc/lvm/backup",
+							Path: filepath.Join(va.hostWritePath, "backup"),
 							Type: &hostPathType,
 						},
 					},
@@ -369,7 +372,7 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 					Name: "lvmcache",
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
-							Path: "/etc/lvm/cache",
+							Path: filepath.Join(va.hostWritePath, "cache"),
 							Type: &hostPathType,
 						},
 					},
@@ -378,7 +381,7 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 					Name: "lvmlock",
 					VolumeSource: v1.VolumeSource{
 						HostPath: &v1.HostPathVolumeSource{
-							Path: "/run/lock/lvm",
+							Path: filepath.Join(va.hostWritePath, "lock"),
 							Type: &hostPathType,
 						},
 					},

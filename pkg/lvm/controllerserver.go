@@ -36,6 +36,7 @@ type controllerServer struct {
 	nodeID           string
 	devicesPattern   string
 	vgName           string
+	hostWritePath    string
 	kubeClient       kubernetes.Clientset
 	provisionerImage string
 	pullPolicy       v1.PullPolicy
@@ -43,7 +44,7 @@ type controllerServer struct {
 }
 
 // NewControllerServer
-func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) (*controllerServer, error) {
+func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, hostWritePath string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) (*controllerServer, error) {
 	if ephemeral {
 		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID}, nil
 	}
@@ -69,6 +70,7 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 			}),
 		nodeID:           nodeID,
 		devicesPattern:   devicesPattern,
+		hostWritePath:    hostWritePath,
 		vgName:           vgName,
 		kubeClient:       *kubeClient,
 		namespace:        namespace,
@@ -137,6 +139,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		kubeClient:       cs.kubeClient,
 		namespace:        cs.namespace,
 		vgName:           cs.vgName,
+		hostWritePath:    cs.hostWritePath,
 	}
 	if err := createProvisionerPod(ctx, va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)
@@ -197,6 +200,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		kubeClient:       cs.kubeClient,
 		namespace:        cs.namespace,
 		vgName:           cs.vgName,
+		hostWritePath:    cs.hostWritePath,
 	}
 	if err := createProvisionerPod(ctx, va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)
