@@ -19,6 +19,7 @@ package lvm
 import (
 	"context"
 	"fmt"
+	"k8s.io/client-go/rest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,17 +82,19 @@ type volumeAction struct {
 }
 
 const (
-	linearType         = "linear"
-	stripedType        = "striped"
-	mirrorType         = "mirror"
-	actionTypeCreate   = "create"
-	actionTypeDelete   = "delete"
-	pullIfNotPresent   = "ifnotpresent"
-	fsTypeRegexpString = `TYPE="(\w+)"`
+	linearType             = "linear"
+	stripedType            = "striped"
+	mirrorType             = "mirror"
+	actionTypeCreate       = "create"
+	actionTypeDelete       = "delete"
+	pullIfNotPresent       = "ifnotpresent"
+	fsTypeRegexpString     = `TYPE="(\w+)"`
+	pvCapacityRegexpString = `B (\d+)B`
 )
 
 var (
-	fsTypeRegexp = regexp.MustCompile(fsTypeRegexpString)
+	fsTypeRegexp     = regexp.MustCompile(fsTypeRegexpString)
+	pvCapacityRegexp = regexp.MustCompile(pvCapacityRegexpString)
 )
 
 // NewLvmDriver creates the driver
@@ -253,6 +256,82 @@ func umountLV(targetPath string) {
 	}
 }
 
+func createGetCapacityPod(ctx context.Context, va volumeAction) (int64, error) {
+	pvCapacityRegexp, err := regexp.Compile(pvCapacityRegexpString)
+	if err != nil {
+		klog.Errorf("unable to compile regexp for querying physical volume capacity regexp:%s err:%v", pvCapacityRegexpString, err)
+		return 0, err
+	}
+
+	// Wrap command in a shell or the device pattern is wrapped in quotes causing pvdisplay to error
+	provisionerPod, deleteFunc, err := createPod(
+		ctx,
+		"sh",
+		[]string{"-c", fmt.Sprintf("pvdisplay %s %s %s", va.devicesPattern, "--units=B", "-C")},
+		va,
+	)
+	if err != nil {
+		return 0, err
+	}
+	defer deleteFunc()
+
+	completed := false
+	retrySeconds := 60
+	podLogRequest := &rest.Request{}
+
+	for i := 0; i < retrySeconds; i++ {
+		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, provisionerPod.Name, metav1.GetOptions{})
+		if pod.Status.Phase == v1.PodFailed {
+			klog.Infof("get capacity pod terminated with failure node:%s", va.nodeName)
+			return 0, status.Error(codes.ResourceExhausted, "get capacity failed")
+		}
+		if err != nil {
+			klog.Errorf("error reading get capacity pod:%v node:%s", err, va.nodeName)
+		} else if pod.Status.Phase == v1.PodSucceeded {
+			klog.Infof("get capacity pod terminated successfully, getting logs node:%s", va.nodeName)
+			podLogRequest = va.kubeClient.CoreV1().Pods(va.namespace).GetLogs(provisionerPod.Name, &v1.PodLogOptions{})
+			completed = true
+			break
+		}
+		klog.Infof("get capacity pod status:%s node:%s", pod.Status.Phase, va.nodeName)
+		time.Sleep(1 * time.Second)
+	}
+	if !completed {
+		return 0, fmt.Errorf("get capacity process timeout after %v seconds node:%s", retrySeconds, va.nodeName)
+	}
+
+	resp := podLogRequest.Do(ctx)
+	if resp.Error() != nil {
+		return 0, fmt.Errorf("failed to get logs from pv capacity pod: %v node:%s", err, va.nodeName)
+	}
+	logs, err := resp.Raw()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read logs from pv capacity pod: %v node:%s", err, va.nodeName)
+	}
+
+	matches := pvCapacityRegexp.FindStringSubmatch(string(logs))
+	totalBytes := int64(0)
+	for i := 1; i < len(matches); i++ {
+		i, err := strconv.ParseInt(matches[i], 10, 64)
+		if err != nil {
+			klog.Errorf("unable to parse returned free space output:%s err:%v node:%s", matches[i], err, va.nodeName)
+			return 0, err
+		}
+		totalBytes += i
+	}
+
+	lvmTypeBytes := int64(0)
+	switch va.lvmType {
+	case linearType, stripedType:
+		lvmTypeBytes = totalBytes
+	case mirrorType:
+		lvmTypeBytes = totalBytes / 2
+	}
+
+	klog.Infof("pvdisplay output for remaining pv capacity: %d bytes node:%s", lvmTypeBytes, va.nodeName)
+	return lvmTypeBytes, nil
+}
+
 func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 	if va.name == "" || va.nodeName == "" {
 		return fmt.Errorf("invalid empty name or path or node")
@@ -270,6 +349,42 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 	}
 	args = append(args, "--lvname", va.name, "--vgname", va.vgName)
 
+	provisionerPod, deleteFunc, err := createPod(ctx, "/csi-lvmplugin-provisioner", args, va)
+	if err != nil {
+		return err
+	}
+	defer deleteFunc()
+
+	completed := false
+	retrySeconds := 60
+	for i := 0; i < retrySeconds; i++ {
+		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, provisionerPod.Name, metav1.GetOptions{})
+		if pod.Status.Phase == v1.PodFailed {
+			// pod terminated in time, but with failure
+			// return ResourceExhausted so the requesting pod can be rescheduled to anonther node
+			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
+			klog.Info("provisioner pod terminated with failure")
+			return status.Error(codes.ResourceExhausted, "volume creation failed")
+		}
+		if err != nil {
+			klog.Errorf("error reading provisioner pod:%v", err)
+		} else if pod.Status.Phase == v1.PodSucceeded {
+			klog.Info("provisioner pod terminated successfully")
+			completed = true
+			break
+		}
+		klog.Infof("provisioner pod status:%s", pod.Status.Phase)
+		time.Sleep(1 * time.Second)
+	}
+	if !completed {
+		return fmt.Errorf("create process timeout after %v seconds", retrySeconds)
+	}
+
+	klog.Infof("Volume %v has been %vd on %v", va.name, va.action, va.nodeName)
+	return nil
+}
+
+func createPod(ctx context.Context, cmd string, args []string, va volumeAction) (*v1.Pod, func(), error) {
 	klog.Infof("start provisionerPod with args:%s", args)
 	hostPathType := v1.HostPathDirectoryOrCreate
 	privileged := true
@@ -290,7 +405,7 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 				{
 					Name:    "csi-lvmplugin-" + string(va.action),
 					Image:   va.provisionerImage,
-					Command: []string{"/csi-lvmplugin-provisioner"},
+					Command: []string{cmd},
 					Args:    args,
 					VolumeMounts: []v1.VolumeMount{
 						{
@@ -377,6 +492,7 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 						},
 					},
 				},
+
 				{
 					Name: "lvmlock",
 					VolumeSource: v1.VolumeSource{
@@ -392,45 +508,17 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 
 	// If it already exists due to some previous errors, the pod will be cleaned up later automatically
 	// https://github.com/rancher/local-path-provisioner/issues/27
-	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(ctx, provisionerPod, metav1.CreateOptions{})
+	_, err := va.kubeClient.CoreV1().Pods(va.namespace).Create(ctx, provisionerPod, metav1.CreateOptions{})
 	if err != nil && !k8serror.IsAlreadyExists(err) {
-		return err
+		return nil, nil, err
 	}
 
-	defer func() {
+	return provisionerPod, func() {
 		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(ctx, provisionerPod.Name, metav1.DeleteOptions{})
 		if e != nil {
 			klog.Errorf("unable to delete the provisioner pod: %v", e)
 		}
-	}()
-
-	completed := false
-	retrySeconds := 60
-	for i := 0; i < retrySeconds; i++ {
-		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, provisionerPod.Name, metav1.GetOptions{})
-		if pod.Status.Phase == v1.PodFailed {
-			// pod terminated in time, but with failure
-			// return ResourceExhausted so the requesting pod can be rescheduled to anonther node
-			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
-			klog.Info("provisioner pod terminated with failure")
-			return status.Error(codes.ResourceExhausted, "volume creation failed")
-		}
-		if err != nil {
-			klog.Errorf("error reading provisioner pod:%v", err)
-		} else if pod.Status.Phase == v1.PodSucceeded {
-			klog.Info("provisioner pod terminated successfully")
-			completed = true
-			break
-		}
-		klog.Infof("provisioner pod status:%s", pod.Status.Phase)
-		time.Sleep(1 * time.Second)
-	}
-	if !completed {
-		return fmt.Errorf("create process timeout after %v seconds", retrySeconds)
-	}
-
-	klog.Infof("Volume %v has been %vd on %v", va.name, va.action, va.nodeName)
-	return nil
+	}, nil
 }
 
 // VgExists checks if the given volume group exists
