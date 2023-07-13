@@ -19,6 +19,7 @@ package lvm
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/client-go/rest"
 	"os"
 	"os/exec"
@@ -81,20 +82,41 @@ type volumeAction struct {
 	hostWritePath    string
 }
 
+type pvReport struct {
+	Report []struct {
+		PV []struct {
+			PVName string `json:"pv_name"`
+			PVFree string `json:"pv_free"`
+		} `json:"pv"`
+	} `json:"report"`
+}
+
+func (p *pvReport) totalFree() (int64, error) {
+	totalFree := int64(0)
+	for _, report := range p.Report {
+		for _, pv := range report.PV {
+			free, err := strconv.ParseInt(pv.PVFree, 10, 0)
+			if err != nil {
+				return 0, fmt.Errorf("failed to parse free space for device %s with error: %w", pv.PVName, err)
+			}
+			totalFree += free
+		}
+	}
+	return totalFree, nil
+}
+
 const (
-	linearType             = "linear"
-	stripedType            = "striped"
-	mirrorType             = "mirror"
-	actionTypeCreate       = "create"
-	actionTypeDelete       = "delete"
-	pullIfNotPresent       = "ifnotpresent"
-	fsTypeRegexpString     = `TYPE="(\w+)"`
-	pvCapacityRegexpString = `B (\d+)B`
+	linearType         = "linear"
+	stripedType        = "striped"
+	mirrorType         = "mirror"
+	actionTypeCreate   = "create"
+	actionTypeDelete   = "delete"
+	pullIfNotPresent   = "ifnotpresent"
+	fsTypeRegexpString = `TYPE="(\w+)"`
 )
 
 var (
-	fsTypeRegexp     = regexp.MustCompile(fsTypeRegexpString)
-	pvCapacityRegexp = regexp.MustCompile(pvCapacityRegexpString)
+	fsTypeRegexp = regexp.MustCompile(fsTypeRegexpString)
 )
 
 // NewLvmDriver creates the driver
@@ -257,17 +279,11 @@ func umountLV(targetPath string) {
 }
 
 func createGetCapacityPod(ctx context.Context, va volumeAction) (int64, error) {
-	pvCapacityRegexp, err := regexp.Compile(pvCapacityRegexpString)
-	if err != nil {
-		klog.Errorf("unable to compile regexp for querying physical volume capacity regexp:%s err:%v", pvCapacityRegexpString, err)
-		return 0, err
-	}
-
-	// Wrap command in a shell or the device pattern is wrapped in quotes causing pvdisplay to error
+	// Wrap command in a shell or the device pattern is wrapped in quotes causing pvs to error
 	provisionerPod, deleteFunc, err := createPod(
 		ctx,
 		"sh",
-		[]string{"-c", fmt.Sprintf("pvdisplay %s %s %s", va.devicesPattern, "--units=B", "-C")},
+		[]string{"-c", fmt.Sprintf("pvs %s %s %s %s", va.devicesPattern, "--units=B", "--reportformat=json", "--nosuffix")},
 		va,
 	)
 	if err != nil {
@@ -302,22 +318,21 @@ func createGetCapacityPod(ctx context.Context, va volumeAction) (int64, error) {
 
 	resp := podLogRequest.Do(ctx)
 	if resp.Error() != nil {
-		return 0, fmt.Errorf("failed to get logs from pv capacity pod: %v node:%s", err, va.nodeName)
+		return 0, fmt.Errorf("failed to get logs from pv capacity pod: %w node:%s", err, va.nodeName)
 	}
 	logs, err := resp.Raw()
 	if err != nil {
-		return 0, fmt.Errorf("failed to read logs from pv capacity pod: %v node:%s", err, va.nodeName)
+		return 0, fmt.Errorf("failed to read logs from pv capacity pod: %w node:%s", err, va.nodeName)
 	}
 
-	matches := pvCapacityRegexp.FindStringSubmatch(string(logs))
-	totalBytes := int64(0)
-	for i := 1; i < len(matches); i++ {
-		i, err := strconv.ParseInt(matches[i], 10, 64)
-		if err != nil {
-			klog.Errorf("unable to parse returned free space output:%s err:%v node:%s", matches[i], err, va.nodeName)
-			return 0, err
-		}
-		totalBytes += i
+	pvReport := pvReport{}
+	err = json.Unmarshal(logs, &pvReport)
+	if err != nil {
+		return 0, fmt.Errorf("failed to format pvs output: %w node:%s", err, va.nodeName)
+	}
+	totalBytes, err := pvReport.totalFree()
+	if err != nil {
+		return 0, fmt.Errorf("%w node:%s", err, va.nodeName)
 	}
 
 	lvmTypeBytes := int64(0)
@@ -328,7 +343,7 @@ func createGetCapacityPod(ctx context.Context, va volumeAction) (int64, error) {
 		lvmTypeBytes = totalBytes / 2
 	}
 
-	klog.Infof("pvdisplay output for remaining pv capacity: %d bytes node:%s", lvmTypeBytes, va.nodeName)
+	klog.Infof("pvs output for remaining pv capacity: %d bytes node:%s", lvmTypeBytes, va.nodeName)
 	return lvmTypeBytes, nil
 }
 
