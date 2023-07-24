@@ -8,3 +8,18 @@ nodes:
         containerPath: /dev/loop100
       - hostPath: /dev/loop101
         containerPath: /dev/loop101
+      - hostPath: config
+        containerPath: /etc/config
+
+    kubeadmConfigPatches:
+    - |
+      kind: ClusterConfiguration
+      apiServer:
+          extraArgs:
+            admission-control-config-file: /etc/config/kind-pss.yaml
+          extraVolumes:
+            - name: accf
+              hostPath: /etc/config
+              mountPath: /etc/config
+              readOnly: true
+              pathType: "DirectoryOrCreate"
