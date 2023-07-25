@@ -5,14 +5,24 @@ metadata:
 spec:
   containers:
   - name: volume-test
-    image: nginx:stable-alpine
+    image: alpine
     imagePullPolicy: IfNotPresent
+    command:
+      - tail
+      - -f
+      - /etc/hosts
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 10014
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
     volumeMounts:
     - name: linear
       mountPath: /linear
-
-    ports:
-    - containerPort: 80
     resources:
       limits:
         cpu: 100m

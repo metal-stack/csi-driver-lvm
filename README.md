@@ -56,9 +56,9 @@ kubectl delete -f  examples/csi-app.yaml
 kubectl delete -f examples/csi-pvc.yaml
 ```
 
-## Development ###
+### Development ###
 
-In order to run the integration tests locally, you need to create to loop devices on your host machine. Make sure the loop device mount paths are not used on your system (default path is `/dev/loop10{1,2}`).
+In order to run the integration tests locally, you need to create to loop devices on your host machine. Make sure the loop device mount paths are not used on your system (default path is `/dev/loop10{0,1}`).
 
 You can create these loop devices like this:
 
