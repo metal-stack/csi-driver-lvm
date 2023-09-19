@@ -20,16 +20,17 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"context"
 
-	"github.com/docker/go-units"
 	"golang.org/x/sys/unix"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 )
 
@@ -112,9 +113,13 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		if val == "" {
 			return nil, status.Error(codes.InvalidArgument, "ephemeral inline volume is missing size parameter")
 		}
-		size, err := units.RAMInBytes(val)
+		sizeQuantity, err := resource.ParseQuantity(val)
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("failed to parse size(%s) of ephemeral inline volume: %s", val, err.Error()))
+		}
+		size, err := strconv.ParseUint(sizeQuantity.AsDec().String(), 10, 64)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("parsed volume size(%s) of ephemeral inline volume does not fit into an uint64: %s", val, err.Error()))
 		}
 
 		volID := req.GetVolumeId()
