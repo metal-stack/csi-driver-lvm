@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/container-storage-interface/spec v1.7.0
-	github.com/docker/go-units v0.5.0
 	github.com/kubernetes-csi/csi-lib-utils v0.12.0
 	github.com/urfave/cli/v2 v2.23.7
 	golang.org/x/net v0.5.0
