@@ -359,9 +359,9 @@ func parseSize(val string) (uint64, error) {
 		return uint64(size), nil
 	}
 
-	if size, err := parseWithGoUnits(val); err == nil {
+	if size, err := parseWithKubernetes(val); err == nil {
 		return size, nil
 	}
 
-	return parseWithKubernetes(val)
+	return parseWithGoUnits(val)
 }
