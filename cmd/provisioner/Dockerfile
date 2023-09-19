@@ -4,7 +4,7 @@ COPY / /work
 WORKDIR /work
 RUN make provisioner
 
-FROM alpine:3.17
+FROM alpine:3.18
 LABEL maintainers="Metal Authors"
 LABEL description="LVM Driver"
 
