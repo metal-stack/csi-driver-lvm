@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"context"
@@ -30,6 +31,7 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 )
 
@@ -108,13 +110,9 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	// if ephemeral is specified, create volume here
 	if ephemeralVolume {
 
-		val := req.GetVolumeContext()["size"]
-		if val == "" {
-			return nil, status.Error(codes.InvalidArgument, "ephemeral inline volume is missing size parameter")
-		}
-		size, err := units.RAMInBytes(val)
+		size, err := parseSize(req.GetVolumeContext()["size"])
 		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("failed to parse size(%s) of ephemeral inline volume: %s", val, err.Error()))
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 
 		volID := req.GetVolumeId()
@@ -124,7 +122,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = CreateLVS(ns.vgName, volID, uint64(size), req.GetVolumeContext()["type"])
+		output, err = CreateLVS(ns.vgName, volID, size, req.GetVolumeContext()["type"])
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}
@@ -330,4 +328,40 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 		CapacityBytes: capacity,
 	}, nil
 
+}
+
+func parseSize(val string) (uint64, error) {
+	if val == "" {
+		return 0, fmt.Errorf("ephemeral inline volume is missing size parameter")
+	}
+
+	parseWithKubernetes := func(raw string) (uint64, error) {
+		sizeQuantity, err := resource.ParseQuantity(raw)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse size (%s) of ephemeral inline volume: %w", raw, err)
+		}
+
+		size, err := strconv.ParseUint(sizeQuantity.AsDec().String(), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parsed volume size (%s) of ephemeral inline volume does not fit into an uint64: %w", raw, err)
+		}
+
+		return size, nil
+	}
+
+	// this was the initial method to parse the size and has to be kept for compatibility reasons
+	parseWithGoUnits := func(raw string) (uint64, error) {
+		size, err := units.RAMInBytes(raw)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse size (%s) of ephemeral inline volume: %w", raw, err)
+		}
+
+		return uint64(size), nil
+	}
+
+	if size, err := parseWithKubernetes(val); err == nil {
+		return size, nil
+	}
+
+	return parseWithGoUnits(val)
 }
