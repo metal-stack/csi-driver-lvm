@@ -17,6 +17,8 @@ limitations under the License.
 package lvm
 
 import (
+	"fmt"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -55,6 +57,7 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 	}
 	// creates the clientset
 	kubeClient, err := kubernetes.NewForConfig(config)
+
 	if err != nil {
 		return nil, err
 	}
@@ -62,6 +65,7 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 		caps: getControllerServiceCapabilities(
 			[]csi.ControllerServiceCapability_RPC_Type{
 				csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+				csi.ControllerServiceCapability_RPC_GET_CAPACITY,
 				// TODO
 				//				csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 				//				csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
@@ -212,6 +216,33 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
+func (cs *controllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
+	nodeName := req.GetAccessibleTopology().GetSegments()[topologyKeyNode]
+	lvmType := req.GetParameters()["type"]
+	totalBytes, err := createGetCapacityPod(ctx, volumeAction{
+		action:           "getcapacity",
+		name:             fmt.Sprintf("%s-%s", lvmType, nodeName),
+		nodeName:         nodeName,
+		lvmType:          lvmType,
+		devicesPattern:   cs.devicesPattern,
+		provisionerImage: cs.provisionerImage,
+		pullPolicy:       cs.pullPolicy,
+		kubeClient:       cs.kubeClient,
+		namespace:        cs.namespace,
+		vgName:           cs.vgName,
+		hostWritePath:    cs.hostWritePath,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to query devices capacity: %v", err)
+	}
+
+	return &csi.GetCapacityResponse{
+		AvailableCapacity: totalBytes,
+		MaximumVolumeSize: wrapperspb.Int64(totalBytes),
+		MinimumVolumeSize: wrapperspb.Int64(0),
+	}, nil
+}
+
 func (cs *controllerServer) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
 	return &csi.ControllerGetCapabilitiesResponse{
 		Capabilities: cs.caps,
@@ -284,10 +315,6 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 }
 
 func (cs *controllerServer) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "")
-}
-
-func (cs *controllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }
 
