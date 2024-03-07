@@ -4,25 +4,29 @@ metadata:
   name: volume-test-inline-xfs
 spec:
   containers:
-    - name: inline
-      image: alpine
-      imagePullPolicy: IfNotPresent
-      command:
-        - tail
-        - -f
-        - /etc/hosts
-      securityContext:
-        allowPrivilegeEscalation: false
-        runAsNonRoot: true
-        runAsUser: 10014
-        seccompProfile:
-          type: RuntimeDefault
-        capabilities:
-          drop:
-            - ALL
-      volumeMounts:
-        - mountPath: "/data"
-          name: lvm-pvc-inline-xfs
+  - name: inline
+    image: alpine
+    imagePullPolicy: IfNotPresent
+    command:
+      - tail
+      - -f
+      - /etc/hosts
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 10014
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+    volumeMounts:
+      - mountPath: "/data"
+        name: lvm-pvc-inline-xfs
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100M
   volumes:
     - name: lvm-pvc-inline-xfs
       csi:

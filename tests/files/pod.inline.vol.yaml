@@ -23,6 +23,10 @@ spec:
     volumeMounts:
     - mountPath: "/data"
       name: lvm-pvc-inline
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100M
   volumes:
     - name: lvm-pvc-inline
       csi:
