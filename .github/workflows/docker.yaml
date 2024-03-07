@@ -23,15 +23,15 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Set up Go 1.19
-      uses: actions/setup-go@v3
+    - name: Set up Go 1.22
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.19
+        go-version: "1.22.x"
 
     - name: Lint
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@4
       with:
         args: --build-tags integration -p bugs -p unused --timeout=10m
 
@@ -41,15 +41,15 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Set up Go 1.19
-      uses: actions/setup-go@v3
+    - name: Set up Go 1.22
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.19
+        go-version: "1.22.x"
 
     - name: Create k8s Kind Cluster
-      uses: helm/kind-action@v1.5.0
+      uses: helm/kind-action@v1.9.0
       with:
         install_only: true
 
@@ -69,7 +69,7 @@ jobs:
     steps:
     - name: Log in to the container registry
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ secrets.DOCKER_REGISTRY_USER }}
@@ -77,17 +77,17 @@ jobs:
 
     - name: Checkout
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
-    - name: Set up Go 1.19
+    - name: Set up Go 1.22
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v5
       with:
-        go-version: 1.19
+        go-version: "1.22.x"
 
     - name: Set up Docker Buildx
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v3
 
     - name: Make tag
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
@@ -98,7 +98,7 @@ jobs:
 
     - name: Build and push image
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-      uses: docker/build-push-action@v3
+      uses: docker/build-push-action@v5
       with:
         context: .
         push: true
@@ -107,7 +107,7 @@ jobs:
 
     - name: Build and push provisioner image
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-      uses: docker/build-push-action@v3
+      uses: docker/build-push-action@v5
       with:
         context: .
         push: true

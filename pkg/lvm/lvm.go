@@ -249,7 +249,7 @@ func umountLV(targetPath string) {
 	cmd := exec.Command("umount", "--lazy", "--force", targetPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Errorf("unable to umount %s output:%s err:%w", targetPath, string(out), err)
+		klog.Errorf("unable to umount %s output:%s err:%v", targetPath, string(out), err)
 	}
 }
 
@@ -406,7 +406,7 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 
 	completed := false
 	retrySeconds := 60
-	for i := 0; i < retrySeconds; i++ {
+	for range retrySeconds {
 		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, provisionerPod.Name, metav1.GetOptions{})
 		if pod.Status.Phase == v1.PodFailed {
 			// pod terminated in time, but with failure
