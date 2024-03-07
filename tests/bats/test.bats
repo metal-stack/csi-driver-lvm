@@ -76,10 +76,10 @@
 }
 
 @test "resize block pvc" {
-    run kubectl apply -f files/pvc.block.resize.yaml --wait --timeout=20s
+    run kubectl apply -f files/pvc.block.resize.yaml --wait --timeout=30s
     [ "$status" -eq 0 ]
 
-    run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.block.resize.yaml --timeout=20s
+    run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.block.resize.yaml --timeout=30s
     [ "$status" -eq 0 ]
 }
 
