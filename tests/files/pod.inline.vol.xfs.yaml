@@ -28,6 +28,6 @@ spec:
       csi:
         driver: lvm.csi.metal-stack.io
         volumeAttributes:
-          size: "20MB"
+          size: "400MB"
           type: "linear"
         fsType: xfs

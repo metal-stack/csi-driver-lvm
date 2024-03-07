@@ -3,9 +3,9 @@ module github.com/metal-stack/csi-driver-lvm
 go 1.22
 
 require (
-	github.com/container-storage-interface/spec v1.8.0
+	github.com/container-storage-interface/spec v1.9.0
 	github.com/docker/go-units v0.5.0
-	github.com/kubernetes-csi/csi-lib-utils v0.14.0
+	github.com/kubernetes-csi/csi-lib-utils v0.17.0
 	github.com/urfave/cli/v2 v2.27.1
 	golang.org/x/net v0.22.0
 	golang.org/x/sys v0.18.0
