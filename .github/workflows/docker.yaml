@@ -31,7 +31,7 @@ jobs:
         go-version: "1.22.x"
 
     - name: Lint
-      uses: golangci/golangci-lint-action@4
+      uses: golangci/golangci-lint-action@v4
       with:
         args: --build-tags integration -p bugs -p unused --timeout=10m
 
