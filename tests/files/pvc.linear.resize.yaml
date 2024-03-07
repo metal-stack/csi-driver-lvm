@@ -8,4 +8,4 @@ spec:
   storageClassName: csi-driver-lvm-linear
   resources:
     requests:
-      storage: 20Mi
+      storage: 200Mi

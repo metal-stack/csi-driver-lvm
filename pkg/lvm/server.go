@@ -17,13 +17,13 @@ limitations under the License.
 package lvm
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"strings"
 	"sync"
 
-	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"k8s.io/klog/v2"
 
