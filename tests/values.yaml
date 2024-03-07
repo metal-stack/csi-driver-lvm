@@ -12,10 +12,11 @@ provisionerImage:
 lvm:
   devicePattern: /dev/loop100,/dev/loop101
 
-# customCSISidecars:
-#   enabled: true
-#   attacher: registry.k8s.io/sig-storage/csi-attacher:v4.5.0
-#   livenessprobe: registry.k8s.io/sig-storage/livenessprobe:v2.12.0
-#   provisioner: registry.k8s.io/sig-storage/csi-provisioner:v4.0.0
-#   registrar: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0
-#   resizer: registry.k8s.io/sig-storage/csi-resizer:v1.10.0
+# FIXME: comment once helm chart is released
+customCSISidecars:
+  enabled: true
+  attacher: registry.k8s.io/sig-storage/csi-attacher:v4.5.0
+  livenessprobe: registry.k8s.io/sig-storage/livenessprobe:v2.12.0
+  provisioner: registry.k8s.io/sig-storage/csi-provisioner:v4.0.0
+  registrar: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.10.0
+  resizer: registry.k8s.io/sig-storage/csi-resizer:v1.10.0
