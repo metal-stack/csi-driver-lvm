@@ -279,11 +279,26 @@ func umountLV(targetPath string) {
 }
 
 func createGetCapacityPod(ctx context.Context, va volumeAction) (int64, error) {
+	// Prior to running the pvs command, run pvcreate with the device pattern as physical volumes aren't initialised
+	// if the node is new. This would result in 0 capacity causing PVCs to never be scheduled onto a new node.
+	pvCreateVA := va
+	pvCreateVA.action = "pvcreate"
+	_, deleteFunc, err := createPod(
+		ctx,
+		"sh",
+		[]string{"-c", fmt.Sprintf("pvcreate %s", va.devicesPattern)},
+		pvCreateVA,
+	)
+	if err != nil {
+		return 0, err
+	}
+	defer deleteFunc()
+
 	// Wrap command in a shell or the device pattern is wrapped in quotes causing pvs to error
 	provisionerPod, deleteFunc, err := createPod(
 		ctx,
 		"sh",
-		[]string{"-c", fmt.Sprintf("pvs %s %s %s %s", va.devicesPattern, "--units=B", "--reportformat=json", "--nosuffix")},
+		[]string{"-c", fmt.Sprintf("pvs %s %s %s %s %s", va.devicesPattern, "--units=B", "--reportformat=json", "--nosuffix", "2>/dev/null")},
 		va,
 	)
 	if err != nil {
@@ -318,7 +333,7 @@ func createGetCapacityPod(ctx context.Context, va volumeAction) (int64, error) {
 
 	resp := podLogRequest.Do(ctx)
 	if resp.Error() != nil {
-		return 0, fmt.Errorf("failed to get logs from pv capacity pod: %w node:%s", err, va.nodeName)
+		return 0, fmt.Errorf("failed to get logs from pv capacity pod: %w node:%s", resp.Error(), va.nodeName)
 	}
 	logs, err := resp.Raw()
 	if err != nil {
@@ -628,8 +643,6 @@ func CreateLVS(vg string, name string, size uint64, lvmType string) (string, err
 	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
 		return "", fmt.Errorf("lvmType is incorrect: %s", lvmType)
 	}
-
-	// TODO: check available capacity, fail if request doesn't fit
 
 	args := []string{"-v", "--yes", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
 
