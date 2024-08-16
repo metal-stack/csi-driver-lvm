@@ -19,8 +19,6 @@ package lvm
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/json"
-	"k8s.io/client-go/rest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +26,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/client-go/rest"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -298,7 +299,7 @@ func createGetCapacityPod(ctx context.Context, va volumeAction) (int64, error) {
 	provisionerPod, deleteFunc, err := createPod(
 		ctx,
 		"sh",
-		[]string{"-c", fmt.Sprintf("pvs %s %s %s %s %s", va.devicesPattern, "--units=B", "--reportformat=json", "--nosuffix", "2>/dev/null")},
+		[]string{"-c", fmt.Sprintf("pvs %s %s %s %s %s", va.devicesPattern, "--units=B", "--reportformat=json", "--nosuffix", "2>/dev/null || true")},
 		va,
 	)
 	if err != nil {
