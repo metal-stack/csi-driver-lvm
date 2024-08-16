@@ -124,6 +124,11 @@
     [ "$status" -eq 0 ]
 }
 
+@test "check capacity tracking" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.inline.vol.xfs.yaml --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
 @test "delete csi-lvm-controller" {
     echo "⏳ Wait 10s for all PVCs to be cleaned up..." >&3
     sleep 10
