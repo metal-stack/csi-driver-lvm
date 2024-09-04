@@ -42,7 +42,7 @@ rm-loop%:
 	@sudo losetup -d /dev/loop$* || true
 	@! losetup /dev/loop$*
 	@sudo rm -f /dev/loop$*
-	@rm loop$*.img
+	@rm -f loop$*.img
 # If removing this loop device fails, you may need to:
 # 	sudo dmsetup info
 # 	sudo dmsetup remove <DEVICE_NAME>
