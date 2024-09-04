@@ -410,7 +410,7 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, provisionerPod.Name, metav1.GetOptions{})
 		if pod.Status.Phase == v1.PodFailed {
 			// pod terminated in time, but with failure
-			// return ResourceExhausted so the requesting pod can be rescheduled to anonther node
+			// return ResourceExhausted so the requesting pod can be rescheduled to another node
 			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
 			klog.Info("provisioner pod terminated with failure")
 			return status.Error(codes.ResourceExhausted, "volume creation failed")
