@@ -57,6 +57,7 @@ jobs:
     - name: Test
       run: |
         make test
+        make test-cleanup
 
   build-platforms:
     name: Docker Build Platforms
