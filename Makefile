@@ -77,4 +77,4 @@ test: build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
 	done
 
 .PHONY: test-cleanup
-test-cleanup: rm-loop100 rm-loop101 rm-kind
+test-cleanup: rm-kind
