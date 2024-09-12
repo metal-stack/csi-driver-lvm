@@ -66,6 +66,7 @@ RERUN ?= 1
 .PHONY: test
 test: build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
 	@cd tests && docker build -t csi-bats . && cd -
+	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \
 	docker run -i$(DOCKER_TTY_ARG) \
 		-e HELM_REPO=$(HELM_REPO) \
