@@ -317,7 +317,7 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 		isBlock = true
 	}
 
-	output, err := extendLVS(ns.vgName, volID, uint64(capacity), isBlock)
+	output, err := extendLVS(ns.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to umount lv: %w output:%s", err, output)
@@ -356,7 +356,7 @@ func parseSize(val string) (uint64, error) {
 			return 0, fmt.Errorf("failed to parse size (%s) of ephemeral inline volume: %w", raw, err)
 		}
 
-		return uint64(size), nil
+		return uint64(size), nil //nolint:gosec
 	}
 
 	if size, err := parseWithKubernetes(val); err == nil {
