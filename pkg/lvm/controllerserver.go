@@ -114,6 +114,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
+	integrity, _ := strconv.ParseBool(req.GetParameters()["integrity"])
 
 	volumeContext := req.GetParameters()
 	size := strconv.FormatInt(req.GetCapacityRange().GetRequiredBytes(), 10)
@@ -140,6 +141,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		namespace:        cs.namespace,
 		vgName:           cs.vgName,
 		hostWritePath:    cs.hostWritePath,
+		integrity:        integrity,
 	}
 	if err := createProvisionerPod(ctx, va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)

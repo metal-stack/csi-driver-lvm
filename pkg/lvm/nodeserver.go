@@ -122,7 +122,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = CreateLVS(ns.vgName, volID, size, req.GetVolumeContext()["type"])
+		output, err = CreateLVS(ns.vgName, volID, size, req.GetVolumeContext()["type"], false)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}

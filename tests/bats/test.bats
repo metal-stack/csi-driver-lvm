@@ -109,6 +109,34 @@
     [ "$status" -eq 0 ]
 }
 
+@test "create pvc mirror-integrity" {
+    run kubectl apply -f files/pvc.mirror-integrity.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.mirror-integrity.yaml --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy mirror-integrity pod" {
+    run kubectl apply -f files/pod.mirror-integrity.vol.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "mirror-integrity pod running" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mirror-integrity.vol.yaml --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "pvc mirror-integrity bound" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Bound -f files/pvc.mirror-integrity.yaml --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete mirror-integrity pod" {
+    run kubectl delete -f files/pod.mirror-integrity.vol.yaml --grace-period=0 --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
 @test "deploy inline xfs pod with ephemeral volume" {
     run kubectl apply -f files/pod.inline.vol.xfs.yaml --wait --timeout=20s
     [ "$status" -eq 0 ]
