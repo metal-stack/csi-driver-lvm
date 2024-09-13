@@ -48,7 +48,7 @@
     run kubectl apply -f files/pvc.linear.resize.yaml --wait --timeout=30s
     [ "$status" -eq 0 ]
 
-    run kubectl replace --force -f files/pod.linear.vol.yaml --wait --timeout=20s
+    run kubectl replace --force -f files/pod.linear.vol.yaml --wait --timeout=50s
 
     run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.linear.resize.yaml --timeout=30s
     kubectl describe pod volume-test >&3
@@ -85,7 +85,7 @@
     run kubectl apply -f files/pvc.block.resize.yaml --wait --timeout=40s
     [ "$status" -eq 0 ]
 
-    run kubectl replace --force -f files/pod.block.vol.yaml --wait --timeout=20s
+    run kubectl replace --force -f files/pod.block.vol.yaml --wait --timeout=50s
 
     run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.block.resize.yaml --timeout=40s
     kubectl describe pod volume-test-block >&3
