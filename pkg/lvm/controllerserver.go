@@ -17,10 +17,10 @@ limitations under the License.
 package lvm
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	v1 "k8s.io/api/core/v1"
@@ -224,8 +224,8 @@ func (cs *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req 
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
 	}
-	if len(req.VolumeCapabilities) == 0 {
-		return nil, status.Error(codes.InvalidArgument, req.VolumeId)
+	if len(req.GetVolumeCapabilities()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, req.GetVolumeId())
 	}
 
 	for _, cap := range req.GetVolumeCapabilities() {
@@ -312,5 +312,9 @@ func (cs *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi
 }
 
 func (cs *controllerServer) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+
+func (cs *controllerServer) ControllerModifyVolume(context.Context, *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
 }

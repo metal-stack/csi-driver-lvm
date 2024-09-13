@@ -31,7 +31,7 @@ build-provisioner:
 	docker build -t csi-driver-lvm-provisioner . -f cmd/provisioner/Dockerfile
 
 /dev/loop%:
-	@fallocate --length 1G loop$*.img
+	@fallocate --length 2G loop$*.img
 ifndef GITHUB_ACTIONS
 	@sudo mknod $@ b 7 $*
 endif
@@ -42,7 +42,7 @@ rm-loop%:
 	@sudo losetup -d /dev/loop$* || true
 	@! losetup /dev/loop$*
 	@sudo rm -f /dev/loop$*
-	@rm loop$*.img
+	@rm -f loop$*.img
 # If removing this loop device fails, you may need to:
 # 	sudo dmsetup info
 # 	sudo dmsetup remove <DEVICE_NAME>
@@ -66,6 +66,7 @@ RERUN ?= 1
 .PHONY: test
 test: build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
 	@cd tests && docker build -t csi-bats . && cd -
+	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \
 	docker run -i$(DOCKER_TTY_ARG) \
 		-e HELM_REPO=$(HELM_REPO) \
@@ -77,4 +78,4 @@ test: build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
 	done
 
 .PHONY: test-cleanup
-test-cleanup: rm-loop100 rm-loop101 rm-kind
+test-cleanup: rm-kind

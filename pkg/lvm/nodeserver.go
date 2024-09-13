@@ -264,11 +264,11 @@ func (ns *nodeServer) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVol
 		return nil, err
 	}
 
-	diskFree := int64(fs.Bfree) * int64(fs.Bsize)
-	diskTotal := int64(fs.Blocks) * int64(fs.Bsize)
+	diskFree := int64(fs.Bfree) * int64(fs.Bsize)   // nolint:gosec
+	diskTotal := int64(fs.Blocks) * int64(fs.Bsize) // nolint:gosec
 
-	inodesFree := int64(fs.Ffree)
-	inodesTotal := int64(fs.Files)
+	inodesFree := int64(fs.Ffree)  // nolint:gosec
+	inodesTotal := int64(fs.Files) // nolint:gosec
 
 	return &csi.NodeGetVolumeStatsResponse{
 		Usage: []*csi.VolumeUsage{
@@ -317,7 +317,7 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 		isBlock = true
 	}
 
-	output, err := extendLVS(ns.vgName, volID, uint64(capacity), isBlock)
+	output, err := extendLVS(ns.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to umount lv: %w output:%s", err, output)
@@ -356,7 +356,7 @@ func parseSize(val string) (uint64, error) {
 			return 0, fmt.Errorf("failed to parse size (%s) of ephemeral inline volume: %w", raw, err)
 		}
 
-		return uint64(size), nil
+		return uint64(size), nil //nolint:gosec
 	}
 
 	if size, err := parseWithKubernetes(val); err == nil {

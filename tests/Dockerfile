@@ -1,4 +1,4 @@
-FROM dtzar/helm-kubectl:3.11.0 as helm-kubectl
+FROM dtzar/helm-kubectl:3.14 AS helm-kubectl
 
 FROM bats/bats
 COPY --from=helm-kubectl /usr/local/bin/helm /usr/local/bin/helm

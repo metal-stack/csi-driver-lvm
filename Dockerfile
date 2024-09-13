@@ -1,10 +1,10 @@
-FROM golang:1.19-alpine as builder
+FROM golang:1.23-alpine AS builder
 RUN apk add make binutils git
 COPY / /work
 WORKDIR /work
 RUN make lvmplugin
 
-FROM alpine:3.16
+FROM alpine:3.20
 LABEL maintainers="Metal Authors"
 LABEL description="LVM Driver"
 
