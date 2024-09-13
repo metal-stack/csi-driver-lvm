@@ -50,6 +50,8 @@
 
     run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.linear.resize.yaml --timeout=30s
     [ "$status" -eq 0 ]
+
+    kubectl describe pvc lvm-pvc-linear >&3
 }
 
 @test "create block pvc" {
@@ -81,6 +83,8 @@
 
     run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.block.resize.yaml --timeout=40s
     [ "$status" -eq 0 ]
+
+    kubectl describe pvc lvm-pvc-block >&3
 }
 
 @test "delete linear pod" {
