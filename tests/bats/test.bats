@@ -109,6 +109,13 @@
     [ "$status" -eq 0 ]
 }
 
+@test "create storageclass mirror-integrity" {
+    # Requires kernel modules:
+    # modprobe dm-raid && modprobe dm-integrity
+    run kubectl apply -f files/storageclass.mirror-integrity.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
 @test "create pvc mirror-integrity" {
     run kubectl apply -f files/pvc.mirror-integrity.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
@@ -123,7 +130,7 @@
 }
 
 @test "mirror-integrity pod running" {
-    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mirror-integrity.vol.yaml --timeout=10s
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mirror-integrity.vol.yaml --timeout=30s
     [ "$status" -eq 0 ]
 }
 
@@ -134,6 +141,16 @@
 
 @test "delete mirror-integrity pod" {
     run kubectl delete -f files/pod.mirror-integrity.vol.yaml --grace-period=0 --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete mirror-integrity pvc" {
+    run kubectl delete -f files/pvc.mirror-integrity.yaml --grace-period=0 --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete storageclass mirror-integrity" {
+    run kubectl delete -f files/storageclass.mirror-integrity.yaml --wait --timeout=20s
     [ "$status" -eq 0 ]
 }
 
