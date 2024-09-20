@@ -8,4 +8,4 @@ spec:
   storageClassName: csi-driver-lvm-mirror-integrity
   resources:
     requests:
-      storage: 10Mi
+      storage: 100Mi

@@ -114,7 +114,10 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
-	integrity, _ := strconv.ParseBool(req.GetParameters()["integrity"])
+	integrity, err := strconv.ParseBool(req.GetParameters()["integrity"])
+	if err != nil {
+		klog.Warningf("Could not parse 'integrity' request parameter, assuming false: %s", err)
+	}
 
 	volumeContext := req.GetParameters()
 	size := strconv.FormatInt(req.GetCapacityRange().GetRequiredBytes(), 10)
