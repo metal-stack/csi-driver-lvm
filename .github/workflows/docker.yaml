@@ -25,10 +25,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Set up Go 1.23
+    - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: "1.23.x"
+        go-version-file: 'go.mod'
+        cache: false
 
     - name: Lint
       uses: golangci/golangci-lint-action@v6
@@ -43,10 +44,14 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Set up Go 1.23
+    - name: load modules for dm-raid and dm-integrity
+      run: lsmod && sudo modprobe dm-raid && sudo modprobe dm-integrity && lsmod
+
+    - name: Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: "1.23.x"
+        go-version-file: 'go.mod'
+        cache: false
 
     - name: Create k8s Kind Cluster
       uses: helm/kind-action@v1.10.0
@@ -65,6 +70,14 @@ jobs:
     needs:
       - lint
       - test
+    strategy:
+      matrix:
+        os:
+          - linux
+        arch:
+          - amd64
+          - arm64
+          - arm/v7d
     env:
       DOCKER_REGISTRY_TOKEN: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
 
@@ -81,15 +94,12 @@ jobs:
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: actions/checkout@v4
 
-    - name: Set up Go 1.23
+    - name: Setup Go
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: actions/setup-go@v5
       with:
-        go-version: "1.23.x"
-
-    - name: Set up Docker Buildx
-      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-      uses: docker/setup-buildx-action@v3
+        go-version-file: 'go.mod'
+        cache: false
 
     - name: Make tag
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
@@ -98,14 +108,19 @@ jobs:
         [ "${GITHUB_EVENT_NAME}" == 'release' ] && echo "tag=${GITHUB_REF##*/}" >> $GITHUB_ENV || true
         [ "${GITHUB_EVENT_NAME}" == 'push' ] && echo "tag=latest" >> $GITHUB_ENV || true
 
+    - name: Build
+      run: |
+        make  GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }}
+
     - name: Build and push image
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: docker/build-push-action@v6
       with:
         context: .
         push: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.tag }}
-        platforms: linux/amd64,linux/arm64,linux/arm/v7
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.tag }}-${{ matrix.arch }}
+        file: Dockerfile.plugin
+        platforms: ${{ matrix.os }}/${{ matrix.arch }}
 
     - name: Build and push provisioner image
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
@@ -113,6 +128,48 @@ jobs:
       with:
         context: .
         push: true
-        tags: ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}
-        file: cmd/provisioner/Dockerfile
-        platforms: linux/amd64,linux/arm64,linux/arm/v7
+        tags: ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}-${{ matrix.arch }}
+        file: Dockerfile.provisioner
+        platforms: ${{ matrix.os }}/${{ matrix.arch }}
+
+  build-multiarch-manifest:
+    name: Docker Build Platforms
+    runs-on: ubuntu-latest
+    needs:
+      - build-platforms
+
+    env:
+      DOCKER_REGISTRY_TOKEN: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
+
+    steps:
+    - name: Log in to the container registry
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.DOCKER_REGISTRY_USER }}
+        password: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
+
+    - name: Make tag
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
+      run: |
+        [ "${GITHUB_EVENT_NAME}" == 'pull_request' ] && echo "tag=${GITHUB_HEAD_REF##*/}" >> $GITHUB_ENV || true
+        [ "${GITHUB_EVENT_NAME}" == 'release' ] && echo "tag=${GITHUB_REF##*/}" >> $GITHUB_ENV || true
+        [ "${GITHUB_EVENT_NAME}" == 'push' ] && echo "tag=latest" >> $GITHUB_ENV || true
+
+    - name: Push multi-platform image
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
+      run: |
+        docker manifest create \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.tag }} \
+          --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.tag }}-amd64 \
+          --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.tag }}-arm64 \
+          --amend ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.tag }}-arm/v7d
+        docker manifest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.tag }}
+
+        docker manifest create \
+          ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }} \
+          --amend ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}-amd64 \
+          --amend ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}-arm64 \
+          --amend ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}-arm/v7d
+        docker manifest ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}
