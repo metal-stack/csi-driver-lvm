@@ -32,6 +32,10 @@ func createLVCmd() *cli.Command {
 				Name:  flagDevicesPattern,
 				Usage: "Required. comma-separated grok patterns of the physical volumes to use.",
 			},
+			&cli.BoolFlag{
+				Name:  flagIntegrity,
+				Usage: "Optional. if set type must be mirrored. Inserts a dm-integrity layer.",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			if err := createLV(c); err != nil {
@@ -64,6 +68,7 @@ func createLV(c *cli.Context) error {
 	if devicesPattern == "" {
 		return fmt.Errorf("invalid empty flag %v", flagDevicesPattern)
 	}
+	integrity := c.Bool(flagIntegrity)
 
 	klog.Infof("create lv %s size:%d vg:%s devicespattern:%s  type:%s", lvName, lvSize, vgName, devicesPattern, lvmType)
 
@@ -72,7 +77,7 @@ func createLV(c *cli.Context) error {
 		return fmt.Errorf("unable to create vg: %w output:%s", err, output)
 	}
 
-	output, err = lvm.CreateLVS(vgName, lvName, lvSize, lvmType)
+	output, err = lvm.CreateLVS(vgName, lvName, lvSize, lvmType, integrity)
 	if err != nil {
 		return fmt.Errorf("unable to create lv: %w output:%s", err, output)
 	}

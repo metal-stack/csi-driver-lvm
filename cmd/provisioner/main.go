@@ -14,6 +14,7 @@ const (
 	flagVGName         = "vgname"
 	flagDevicesPattern = "devices"
 	flagLVMType        = "lvmtype"
+	flagIntegrity      = "integrity"
 )
 
 func cmdNotFound(c *cli.Context, command string) {
