@@ -1,14 +1,12 @@
-FROM golang:1.23-alpine AS builder
-RUN apk add make binutils
-COPY / /work
-WORKDIR /work
-RUN make provisioner
-
+ARG GOOS
+ARG GOARCH
 FROM alpine:3.20
+ARG GOOS
+ARG GOARCH
 LABEL maintainers="Metal Authors"
 LABEL description="LVM Driver"
 
 RUN apk add lvm2 lvm2-extra e2fsprogs e2fsprogs-extra xfsprogs-extra smartmontools nvme-cli util-linux device-mapper
-COPY --from=builder /work/bin/csi-lvmplugin-provisioner /csi-lvmplugin-provisioner
+COPY bin/csi-lvmplugin-provisioner-${GOOS}-${GOARCH} /csi-lvmplugin-provisioner
 USER root
 ENTRYPOINT ["/csi-lvmplugin-provisioner"]
