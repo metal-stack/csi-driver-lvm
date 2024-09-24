@@ -1,6 +1,6 @@
 GO111MODULE := on
 KUBECONFIG := $(shell pwd)/.kubeconfig
-HELM_REPO := "https://helm.metal-stack.io"
+HELM_REPO := "https://helm.metal-stack.io/pull_requests/fix-root-fs-regression"
 
 ifeq ($(CI),true)
   DOCKER_TTY_ARG=

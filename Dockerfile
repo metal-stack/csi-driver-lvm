@@ -1,7 +1,11 @@
 FROM golang:1.23-alpine AS builder
 RUN apk add make binutils git
-COPY / /work
 WORKDIR /work
+COPY cmd cmd
+COPY pkg pkg
+COPY go.mod go.mod
+COPY go.sum go.sum
+COPY Makefile Makefile
 RUN make lvmplugin
 
 FROM alpine:3.20

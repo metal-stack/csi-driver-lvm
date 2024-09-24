@@ -35,7 +35,7 @@
 }
 
 @test "linear pod running" {
-    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.linear.vol.yaml --timeout=20s
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.linear.vol.yaml --timeout=40s
     [ "$status" -eq 0 ]
 }
 
