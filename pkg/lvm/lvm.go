@@ -78,6 +78,7 @@ type volumeAction struct {
 	namespace        string
 	vgName           string
 	hostWritePath    string
+	integrity        bool
 }
 
 const (
@@ -264,6 +265,9 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 	args := []string{}
 	if va.action == actionTypeCreate {
 		args = append(args, "createlv", "--lvsize", fmt.Sprintf("%d", va.size), "--devices", va.devicesPattern, "--lvmtype", va.lvmType)
+		if va.integrity {
+			args = append(args, "--integrity")
+		}
 	}
 	if va.action == actionTypeDelete {
 		args = append(args, "deletelv")
@@ -511,7 +515,7 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 
 // CreateLVS creates the new volume
 // used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
-func CreateLVS(vg string, name string, size uint64, lvmType string) (string, error) {
+func CreateLVS(vg string, name string, size uint64, lvmType string, integrity bool) (string, error) {
 
 	if lvExists(vg, name) {
 		klog.Infof("logicalvolume: %s already exists\n", name)
@@ -548,6 +552,15 @@ func CreateLVS(vg string, name string, size uint64, lvmType string) (string, err
 	case linearType:
 	default:
 		return "", fmt.Errorf("unsupported lvmtype: %s", lvmType)
+	}
+
+	if integrity {
+		switch lvmType {
+		case mirrorType:
+			args = append(args, "--raidintegrity", "y")
+		default:
+			return "", fmt.Errorf("integrity is only supported if type is mirror")
+		}
 	}
 
 	tags := []string{"lv.metal-stack.io/csi-lvm-driver"}
