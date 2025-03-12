@@ -1,10 +1,10 @@
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 RUN apk add make binutils
 COPY / /work
 WORKDIR /work
 RUN make provisioner
 
-FROM alpine:3.20
+FROM alpine:3.21
 LABEL maintainers="Metal Authors"
 LABEL description="LVM Driver"
 
