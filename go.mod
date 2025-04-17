@@ -7,7 +7,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/kubernetes-csi/csi-lib-utils v0.19.0
 	github.com/urfave/cli/v2 v2.27.6
-	golang.org/x/net v0.37.0
+	golang.org/x/net v0.38.0
 	golang.org/x/sys v0.31.0
 	google.golang.org/grpc v1.71.0
 	k8s.io/api v0.32.0
