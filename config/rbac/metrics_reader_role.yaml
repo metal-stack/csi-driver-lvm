@@ -1,14 +1,9 @@
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: controller-role
+  name: metrics-reader
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - nodes
+- nonResourceURLs:
+  - "/metrics"
   verbs:
   - get
-  - list
-  - watch
