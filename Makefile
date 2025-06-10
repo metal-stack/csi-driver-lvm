@@ -80,7 +80,9 @@ test: build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
 .PHONY: test-cleanup
 test-cleanup: rm-kind
 
-# CONTROLLER
+#!
+#! CONTROLLER
+#!
 
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
