@@ -70,6 +70,7 @@ kind:
 			--kubeconfig $(KUBECONFIG); fi
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
+	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-controller
 
 .PHONY: rm-kind
 rm-kind:
@@ -100,8 +101,8 @@ test-cleanup: rm-kind
 # .PHONY: all
 # all: build
 
-.PHONY: csi-driver-lvm-controller
-csi-driver-lvm-controller: generate fmt #vet
+.PHONY: controller
+controller: generate fmt #vet
 	CGO_ENABLED=0 go build \
 		-tags netgo \
 		-trimpath \
@@ -110,13 +111,25 @@ csi-driver-lvm-controller: generate fmt #vet
 			-X 'github.com/metal-stack/v.Revision=$(GITVERSION)' \
 			-X 'github.com/metal-stack/v.GitSHA1=$(SHA)' \
 			-X 'github.com/metal-stack/v.BuildDate=$(BUILDDATE)'" \
-		-o bin/csi-driver-lvm-controller cmd/controller/main.go
-	strip bin/csi-driver-lvm-controller
-	sha256sum bin/csi-driver-lvm-controller > bin/csi-driver-lvm-controller.sha256
+		-o bin/controller cmd/controller/main.go
+	strip bin/controller
+	sha256sum bin/controller > bin/controller.sha256
+
+.PHONY: build-controller
+build-controller:
+	docker build -f Dockerfile.Controller -t csi-driver-lvm-controller .
 
 .PHONY: manifests
 manifests: controller-gen 
 	$(CONTROLLER_GEN) rbac:roleName=controller-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+
+deploy: manifests
+	cd config/manager && kustomize edit set image controller=csi-driver-lvm-controller
+	kustomize build config/default | kubectl apply -f -
+	
+.PHONY: undeploy
+undeploy: 
+	kustomize build config/default | kubectl delete -f -
 
 .PHONY: generate
 generate: controller-gen manifests

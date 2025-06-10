@@ -59,7 +59,7 @@ func main() {
 		},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "814f7540.github.com/metal-stack/csi-driver-lvm",
+		LeaderElectionID:       "814f7540.csi-driver-lvm-controller",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
