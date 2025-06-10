@@ -75,13 +75,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	    if err := (&controller.CsiDriverLvmReconciler{
-        Client: mgr.GetClient(),
-        Scheme: mgr.GetScheme(),
-    }).SetupWithManager(mgr); err != nil {
-        setupLog.Error(err, "unable to create controller", "controller", "CsiDriverLvm")
-        os.Exit(1)
-    }
+	if err := (&controller.CsiDriverLvmReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Log:    ctrl.Log.WithName("CsiDriverLvmController"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "CsiDriverLvm")
+		os.Exit(1)
+	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
