@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 
+	"github.com/metal-stack/csi-driver-lvm/pkg/controller"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -73,6 +74,14 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
+
+	    if err := (&controller.CsiDriverLvmReconciler{
+        Client: mgr.GetClient(),
+        Scheme: mgr.GetScheme(),
+    }).SetupWithManager(mgr); err != nil {
+        setupLog.Error(err, "unable to create controller", "controller", "CsiDriverLvm")
+        os.Exit(1)
+    }
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
