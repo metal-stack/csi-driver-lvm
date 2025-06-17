@@ -31,11 +31,13 @@ func init() {
 // nolint:gocyclo
 func main() {
 	var (
+		provisionerName      string
 		logLevel             string
 		metricsAddr          string
 		enableLeaderElection bool
 		probeAddr            string
 	)
+	flag.StringVar(&provisionerName, "provisioner-name", "lvm.csi.metal-stack.io", "The provisioner name of the csi-driver.")
 	flag.StringVar(&logLevel, "log-level", "info", "The log level of the application.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -77,11 +79,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.CsiDriverLvmReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		Log:    ctrl.Log.WithName("CsiDriverLvmController"),
-	}).SetupWithManager(mgr); err != nil {
+	reconciler := controller.New(mgr.GetClient(), mgr.GetScheme(), ctrl.Log.WithName("CsiDriverLvmReconciler"), controller.Config{ProvisionerName: provisionerName})
+
+	if err := reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CsiDriverLvm")
 		os.Exit(1)
 	}

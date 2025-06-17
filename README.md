@@ -65,6 +65,7 @@ You can create these loop devices like this:
 ```bash
 for i in 100 101; do fallocate -l 1G loop${i}.img ; sudo losetup /dev/loop${i} loop${i}.img; done
 sudo losetup -a
+# https://github.com/util-linux/util-linux/issues/3197
 # use this for recreation or cleanup
 # for i in 100 101; do sudo losetup -d /dev/loop${i}; rm -f loop${i}.img; done
 ```

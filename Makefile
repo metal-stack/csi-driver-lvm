@@ -121,7 +121,7 @@ build-controller:
 
 .PHONY: manifests
 manifests: controller-gen 
-	$(CONTROLLER_GEN) rbac:roleName=controller-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 deploy: manifests
 	cd config/manager && kustomize edit set image controller=csi-driver-lvm-controller
