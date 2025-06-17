@@ -15,6 +15,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   PROVISIONER_IMAGE_NAME: ${{ github.repository }}-provisioner
+  CONTROLLER_IMAGE_NAME: ${{ github.repository }}-controller
 
 jobs:
   lint:
@@ -118,4 +119,14 @@ jobs:
         push: true
         tags: ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}
         file: cmd/provisioner/Dockerfile
+        platforms: linux/amd64,linux/arm64,linux/arm/v7
+
+    - name: Build and push constoller image
+      if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE_NAME }}:${{ env.tag }}
+        file: Dockerfile.Controller
         platforms: linux/amd64,linux/arm64,linux/arm/v7
