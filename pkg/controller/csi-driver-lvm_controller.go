@@ -74,7 +74,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		var sts appsv1.StatefulSet
 		if err := r.Get(ctx, types.NamespacedName{Name: or.Name, Namespace: pod.Namespace}, &sts); err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to fetch sts %q: %w", or, err)
+			return ctrl.Result{}, fmt.Errorf("unable to fetch sts %q: %w", or.Name, err)
 		}
 
 		for _, claimTemplate := range sts.Spec.VolumeClaimTemplates {
