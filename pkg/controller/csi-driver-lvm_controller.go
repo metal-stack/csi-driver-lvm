@@ -2,11 +2,11 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strconv"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,12 +54,12 @@ func New(client client.Client, scheme *runtime.Scheme, log logr.Logger, cfg Conf
 func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var pod corev1.Pod
 	if err := r.Get(ctx, req.NamespacedName, &pod); err != nil {
-		return ctrl.Result{}, errors.Errorf("unable to fetch pod %q: %w", req.NamespacedName, err)
+		return ctrl.Result{}, fmt.Errorf("unable to fetch pod %q: %w", req.NamespacedName, err)
 	}
 
 	var node corev1.Node
 	if err := r.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, &node); err != nil {
-		return ctrl.Result{}, errors.Errorf("unable to fetch pvc %q: %w", pod.Spec.NodeName, err)
+		return ctrl.Result{}, fmt.Errorf("unable to fetch pvc %q: %w", pod.Spec.NodeName, err)
 	}
 
 	if !node.Spec.Unschedulable {
@@ -74,7 +74,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		var sts appsv1.StatefulSet
 		if err := r.Get(ctx, types.NamespacedName{Name: or.Name, Namespace: pod.Namespace}, &sts); err != nil {
-			return ctrl.Result{}, errors.Errorf("unable to fetch sts %q: %w", or, err)
+			return ctrl.Result{}, fmt.Errorf("unable to fetch sts %q: %w", or, err)
 		}
 
 		for _, claimTemplate := range sts.Spec.VolumeClaimTemplates {
@@ -98,12 +98,12 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 
 		if err := r.Get(ctx, types.NamespacedName{Name: pvcName.ClaimName, Namespace: pod.Namespace}, &pvc); err != nil {
-			return ctrl.Result{}, errors.Errorf("unable to fetch pvc %q: %w", pvcName.ClaimName, err)
+			return ctrl.Result{}, fmt.Errorf("unable to fetch pvc %q: %w", pvcName.ClaimName, err)
 		}
 
 		var sc storagev1.StorageClass
 		if err := r.Get(ctx, types.NamespacedName{Name: *pvc.Spec.StorageClassName}, &sc); err != nil {
-			return ctrl.Result{}, errors.Errorf("unable to fetch sc %q: %w", *pvc.Spec.StorageClassName, err)
+			return ctrl.Result{}, fmt.Errorf("unable to fetch sc %q: %w", *pvc.Spec.StorageClassName, err)
 		}
 
 		if sc.Provisioner != r.cfg.ProvisionerName {
@@ -119,12 +119,12 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if value, ok := pvc.Annotations[isEvictionAllowedAnnotation]; ok {
 			isEvictionAllowed, err := strconv.ParseBool(value)
 			if err != nil {
-				return ctrl.Result{}, errors.Errorf("unable to parse annotation for %q: %w", isEvictionAllowedAnnotation, err)
+				return ctrl.Result{}, fmt.Errorf("unable to parse annotation for %q: %w", isEvictionAllowedAnnotation, err)
 			}
 
 			if isEvictionAllowed {
 				if err := r.Delete(ctx, &pvc); err != nil {
-					return ctrl.Result{}, errors.Errorf("unable to delete pvc %q: %w", pvc.Name, err)
+					return ctrl.Result{}, fmt.Errorf("unable to delete pvc %q: %w", pvc.Name, err)
 				}
 			}
 		}
