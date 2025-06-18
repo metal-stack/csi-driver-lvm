@@ -107,6 +107,7 @@ jobs:
       with:
         context: .
         push: true
+        sbom: true
         tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.tag }}
         platforms: linux/amd64,linux/arm64,linux/arm/v7
 
@@ -116,6 +117,7 @@ jobs:
       with:
         context: .
         push: true
+        sbom: true
         tags: ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}
         file: cmd/provisioner/Dockerfile
         platforms: linux/amd64,linux/arm64,linux/arm/v7
