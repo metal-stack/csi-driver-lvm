@@ -26,6 +26,8 @@ spec:
   volumeClaimTemplates:
   - metadata:
       name: my-csi-volume
+      annotations:
+        metal-stack.io/csi-driver-lvm.is-eviction-allowed: "true"
     spec:
       accessModes: ["ReadWriteOnce"]
       resources:
