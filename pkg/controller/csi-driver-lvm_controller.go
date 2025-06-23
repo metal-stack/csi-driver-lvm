@@ -126,6 +126,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				if err := r.Delete(ctx, &pvc); err != nil {
 					return ctrl.Result{}, fmt.Errorf("unable to delete pvc %q: %w", pvc.Name, err)
 				}
+				r.Log.Info("Deleted PVC because of eviction", "pvc", pvc.Name, "pod", pod.Name, "node", node.Name)
 			}
 		}
 	}
@@ -139,8 +140,18 @@ func (r *CsiDriverLvmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			oldObj := e.ObjectOld.(*corev1.Pod)
 			newObj := e.ObjectNew.(*corev1.Pod)
 
-			hasOldObjDisruption := false
-			hasNewObjDisruption := false
+			hasOldObjDisruption := slices.ContainsFunc(oldObj.Status.Conditions, func(cond corev1.PodCondition) bool {
+				if cond.Type == corev1.DisruptionTarget {
+					return true
+				}
+				return false
+			})
+			hasNewObjDisruption := slices.ContainsFunc(newObj.Status.Conditions, func(cond corev1.PodCondition) bool {
+				if cond.Type == corev1.DisruptionTarget {
+					return true
+				}
+				return false
+			})
 
 			for _, cond := range oldObj.Status.Conditions {
 				if cond.Type == corev1.DisruptionTarget {

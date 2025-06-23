@@ -78,7 +78,7 @@ rm-kind:
 
 RERUN ?= 1
 .PHONY: test
-test: build-plugin build-provisioner build-controller /dev/loop100 /dev/loop101 kind
+test: 
 	@cd tests && docker build -t csi-bats . && cd -
 	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \
@@ -86,6 +86,7 @@ test: build-plugin build-provisioner build-controller /dev/loop100 /dev/loop101 
 		-e HELM_REPO=$(HELM_REPO) \
 		-v "$(KUBECONFIG):/root/.kube/config" \
 		-v "$(PWD)/tests:/code" \
+		-v "$(PWD)/config:/config" \
 		--network host \
 		csi-bats \
 		--verbose-run --trace --timing bats/test.bats ; \
@@ -97,9 +98,6 @@ test-cleanup: rm-kind
 #!
 #! CONTROLLER
 #!
-
-# .PHONY: all
-# all: build
 
 .PHONY: controller
 controller: generate fmt #vet

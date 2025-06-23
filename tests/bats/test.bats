@@ -175,6 +175,40 @@
     [ "$status" -eq 0 ]
 }
 
+
+@test "deploy csi-driver-lvm eviction-controller" {
+    run kubectl cordon csi-driver-lvm-worker2
+    run bash -c 'kustomize build /config/default | kubectl apply -f -'
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy csi-driver-lvm statefulset" {
+    [ "$status" -eq 0 ]
+    run kubectl cordon csi-driver-lvm-worker
+    [ "$status" -eq 0 ]
+    run kubectl apply -f files/statefulset.linear.yaml --wait --grace-period=0 --timeout=20s
+    [ "$status" -eq 0 ]
+    run kubectl wait --for=condition=ready pod -l app=nginx --timeout=10s
+    [ "$status" -eq 0 ]
+    run kubectl uncordon csi-driver-lvm-worker
+    [ "$status" -eq 0 ]
+}
+
+@test "drain worker node" {
+    run kubectl drain csi-driver-lvm-worker2 --ignore-daemonsets
+    [ "$status" -eq 0 ]
+
+    # wait for pvc on new node    
+    for i in {1..10}; do
+      NODE=$(kubectl get pvc -o jsonpath='{.items[0].metadata.annotations.volume\.kubernetes\.io/selected-node}')
+      if [[ "$NODE" == "csi-driver-lvm-worker" ]]; then
+        break
+      fi
+      sleep 1
+    done
+    [ "$NODE" = "csi-driver-lvm-worker" ]
+}
+
 @test "delete csi-lvm-controller" {
     echo "⏳ Wait 10s for all PVCs to be cleaned up..." >&3
     sleep 10
@@ -182,3 +216,9 @@
     run helm uninstall --namespace csi-driver-lvm csi-driver-lvm --wait --timeout=30s
     [ "$status" -eq 0 ]
 }
+
+@test "delete csi-driver-lvm eviction-controller" {
+    run bash -c 'kustomize build /config/default | kubectl delete -f -'
+    [ "$status" -eq 0 ]
+}
+
