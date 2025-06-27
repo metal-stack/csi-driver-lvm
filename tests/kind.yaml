@@ -3,26 +3,31 @@ apiVersion: kind.x-k8s.io/v1alpha4
 kind: Cluster
 nodes:
   - role: control-plane
+    extraMounts:
+      - hostPath: config
+        containerPath: /etc/config
   - role: worker
     extraMounts:
       - hostPath: /dev/loop101
         containerPath: /dev/loop101
+      - hostPath: config
+        containerPath: /etc/config
   - role: worker
     extraMounts:
       - hostPath: /dev/loop100
         containerPath: /dev/loop100
-      # - hostPath: config
-      #   containerPath: /etc/config
+      - hostPath: config
+        containerPath: /etc/config
 
-    # kubeadmConfigPatches:
-    # - |
-    #   kind: ClusterConfiguration
-    #   apiServer:
-    #       extraArgs:
-    #         admission-control-config-file: /etc/config/kind-pss.yaml
-    #       extraVolumes:
-    #         - name: accf
-    #           hostPath: /etc/config
-    #           mountPath: /etc/config
-    #           readOnly: true
-    #           pathType: "DirectoryOrCreate"
+    kubeadmConfigPatches:
+    - |
+      kind: ClusterConfiguration
+      apiServer:
+          extraArgs:
+            admission-control-config-file: /etc/config/kind-pss.yaml
+          extraVolumes:
+            - name: accf
+              hostPath: /etc/config
+              mountPath: /etc/config
+              readOnly: true
+              pathType: "DirectoryOrCreate"
