@@ -175,15 +175,16 @@
     [ "$status" -eq 0 ]
 }
 
-
 @test "deploy csi-driver-lvm eviction-controller" {
     run kubectl cordon csi-driver-lvm-worker2
+    [ "$status" -eq 0 ]
     run bash -c 'kustomize build /config/default | kubectl apply -f -'
+    [ "$status" -eq 0 ]
+    run kubectl uncordon csi-driver-lvm-worker2
     [ "$status" -eq 0 ]
 }
 
 @test "deploy csi-driver-lvm statefulset" {
-    [ "$status" -eq 0 ]
     run kubectl cordon csi-driver-lvm-worker
     [ "$status" -eq 0 ]
     run kubectl apply -f files/statefulset.linear.yaml --wait --grace-period=0 --timeout=20s
