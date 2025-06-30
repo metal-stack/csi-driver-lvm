@@ -121,7 +121,7 @@ jobs:
         file: cmd/provisioner/Dockerfile
         platforms: linux/amd64,linux/arm64,linux/arm/v7
 
-    - name: Build and push constoller image
+    - name: Build and push controller image
       if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
       uses: docker/build-push-action@v6
       with:
