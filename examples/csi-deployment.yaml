@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csi-deployment
+  labels:
+    app: csi-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: csi-app
+  template:
+    metadata:
+      labels:
+        app: csi-app
+    spec:
+      containers:
+        - name: csi-app 
+          image: busybox
+          volumeMounts:
+          - mountPath: "/data"
+            name: my-csi-volume
+          command: [ "sleep", "1000000" ]
+      volumes:
+        - name: my-csi-volume
+          persistentVolumeClaim:
+            claimName: csi-pvc
