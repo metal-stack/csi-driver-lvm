@@ -110,32 +110,11 @@ jobs:
         run: |
           make lvmplugin provisioner
 
-      # - name: Generate SBOM for plugin binary
-      #   uses: anchore/sbom-action@v0
-      #   env:
-      #     SBOM_NAME: sbom-lvmplugin-${{ matrix.os }}-${{ matrix.arch }}.json
-      #   with:
-      #     file: ./bin/lvmplugin-${{ matrix.os }}-${{ matrix.arch }}
-      #     format: spdx-json
-      #     artifact-name: ${{ env.SBOM_NAME }}
-      #     output-file: ./bin/${{ env.SBOM_NAME }}
-      #
-      # - name: Generate SBOM for provisioner binary
-      #   uses: anchore/sbom-action@v0
-      #   env:
-      #     SBOM_NAME: sbom-provisioner-${{ matrix.os }}-${{ matrix.arch }}.json
-      #   with:
-      #     file: ./bin/provisioner-${{ matrix.os }}-${{ matrix.arch }}
-      #     format: spdx-json
-      #     artifact-name: ${{ env.SBOM_NAME }}
-      #     output-file: ./bin/${{ env.SBOM_NAME }}
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push plugin image
         if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-        # if: ${{ env.DOCKER_REGISTRY_TOKEN != '' && matrix.os == 'linux' && matrix.arch == 'amd64' }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -147,7 +126,6 @@ jobs:
 
       - name: Build and push provisioner image
         if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
-        # if: ${{ env.DOCKER_REGISTRY_TOKEN != '' && matrix.os == 'linux' && matrix.arch == 'amd64' }}
         uses: docker/build-push-action@v6
         with:
           context: .
