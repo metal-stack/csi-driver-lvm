@@ -126,6 +126,16 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}
           file: cmd/lvmplugin/Dockerfile
 
+      - name: Generate SBOM for plugin binary
+        uses: anchore/sbom-action@v0
+        env:
+          SBOM_NAME: sbom-lvmplugin-${{ matrix.os }}-${{ matrix.arch }}.json
+        with:
+          path: ./bin/lvmplugin-${{ matrix.os }}-${{ matrix.arch }}
+          format: spdx-json
+          artifact-name: ${{ env.SBOM_NAME }}
+          output-file: ./bin/${{ env.SBOM_NAME }}
+
       - name: Build and push provisioner image
         if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
         # if: ${{ env.DOCKER_REGISTRY_TOKEN != '' && matrix.os == 'linux' && matrix.arch == 'amd64' }}
@@ -137,6 +147,15 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}
           file: cmd/provisioner/Dockerfile
       
+      - name: Generate SBOM for provisioner binary
+        uses: anchore/sbom-action@v0
+        env:
+          SBOM_NAME: sbom-provisioner-${{ matrix.os }}-${{ matrix.arch }}.json
+        with:
+          path: ./bin/lvmplugin-${{ matrix.os }}-${{ matrix.arch }}
+          format: spdx-json
+          artifact-name: ${{ env.SBOM_NAME }}
+          output-file: ./bin/${{ env.SBOM_NAME }}
   # build-platforms:
   #   name: Docker Build Platforms
   #   runs-on: ubuntu-latest
