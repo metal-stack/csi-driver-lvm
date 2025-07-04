@@ -110,7 +110,7 @@ jobs:
 
       - name: Build
         run: |
-          make build GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }}
+          make lvmplugin provisioner GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }}
 
       - name: Build and push plugin image
         if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
