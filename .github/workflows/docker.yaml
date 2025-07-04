@@ -13,7 +13,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  PLUGIN_IMAGE_NAME: ${{ github.repository }}
   PROVISIONER_IMAGE_NAME: ${{ github.repository }}-provisioner
 
 jobs:
@@ -141,7 +141,7 @@ jobs:
           context: .
           push: true
           sbom: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}
+          tags: ${{ env.REGISTRY }}/${{ env.PLUGIN_IMAGE_NAME }}:${{ env.tag }}
           file: cmd/lvmplugin/Dockerfile
 
 
@@ -153,6 +153,6 @@ jobs:
           context: .
           push: true
           sbom: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TAG_NAME }}
+          tags: ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}
           file: cmd/provisioner/Dockerfile
       
