@@ -112,6 +112,9 @@ jobs:
         run: |
           make lvmplugin provisioner GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push plugin image
         if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
         # if: ${{ env.DOCKER_REGISTRY_TOKEN != '' && matrix.os == 'linux' && matrix.arch == 'amd64' }}
