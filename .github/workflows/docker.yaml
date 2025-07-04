@@ -73,16 +73,11 @@ jobs:
       matrix:
         os:
           - linux
-          - windows
-          - darwin
         arch:
           - amd64
           - arm64
-        exclude:
-          - os: linux
-            arch: arm64
-          - os: windows
-            arch: arm64
+          - arm/v7
+
     steps:
       - name: Log in to the container registry
         if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
