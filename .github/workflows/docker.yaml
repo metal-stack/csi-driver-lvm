@@ -76,8 +76,7 @@ jobs:
         arch:
           - amd64
           - arm64
-          - arm/v7
-
+          - arm
     steps:
       - name: Log in to the container registry
         if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
@@ -104,8 +103,12 @@ jobs:
           [ "${GITHUB_EVENT_NAME}" == 'push' ] && echo "tag=latest" >> $GITHUB_ENV || true
 
       - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          GOARM: ${{ matrix.arch == 'arm' && '7' || '' }}
         run: |
-          make lvmplugin provisioner GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }}
+          make lvmplugin provisioner
 
       - name: Generate SBOM for plugin binary
         uses: anchore/sbom-action@v0
