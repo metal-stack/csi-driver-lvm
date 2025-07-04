@@ -10,9 +10,11 @@ GITVERSION := $(shell git describe --long --all)
 BUILDDATE := $(shell date --rfc-3339=seconds)
 VERSION := $(or ${VERSION},$(shell git describe --tags --exact-match 2> /dev/null || git symbolic-ref -q --short HEAD || git rev-parse --short HEAD))
 
+ifeq ($(CGO_ENABLED),1)
 ifeq ($(GOOS),linux)
-	LINKMODE := -extldflags -static
-	TAGS := -tags 'netgo'
+	LINKMODE := -linkmode external -extldflags '-static -s -w'
+	TAGS := -tags 'osusergo netgo static_build'
+endif
 endif
 
 LINKMODE := $(LINKMODE) \
@@ -36,8 +38,8 @@ all: provisioner lvmplugin
 .PHONY: lvmplugin
 lvmplugin:
 	go mod tidy
-	CGO_ENABLED=0 go build \
-		-a \
+	go build \
+		$(TAGS) \
 		-ldflags \
 		"$(LINKMODE)" \
 		-o bin/$(BINARY_LVMPLUGIN) \
@@ -50,6 +52,8 @@ provisioner:
 	go mod tidy
 	go build \
 		$(TAGS) \
+		-ldflags \
+		"$(LINKMODE)" \
 		-o bin/$(BINARY_PROVISIONER) \
 		./cmd/provisioner
 	cd bin/ && \
