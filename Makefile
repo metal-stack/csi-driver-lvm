@@ -45,7 +45,6 @@ lvmplugin:
 		-o bin/$(BINARY_LVMPLUGIN) \
 		./cmd/lvmplugin 
 	cd bin/ && \
-	strip $(BINARY_LVMPLUGIN) && \
 	sha512sum $(BINARY_LVMPLUGIN) > $(BINARY_LVMPLUGIN).sha512
 
 .PHONY: provisioner
@@ -58,7 +57,6 @@ provisioner:
 		-o bin/$(BINARY_PROVISIONER) \
 		./cmd/provisioner
 	cd bin/ && \
-	strip $(BINARY_PROVISIONER) && \
 	sha512sum $(BINARY_PROVISIONER) > $(BINARY_PROVISIONER).sha512
 
 .PHONY: build-plugin
