@@ -125,7 +125,7 @@ jobs:
         env:
           SBOM_NAME: sbom-provisioner-${{ matrix.os }}-${{ matrix.arch }}.json
         with:
-          file: ./bin/lvmplugin-${{ matrix.os }}-${{ matrix.arch }}
+          file: ./bin/provisioner-${{ matrix.os }}-${{ matrix.arch }}
           format: spdx-json
           artifact-name: ${{ env.SBOM_NAME }}
           output-file: ./bin/${{ env.SBOM_NAME }}
