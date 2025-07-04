@@ -63,7 +63,7 @@ provisioner:
 
 .PHONY: build-plugin
 build-plugin: lvmplugin
-	docker build -t csi-driver-lvm -f cmd/lvmplugin/Dockerfile --build-arg BINARY=$(BINARY_PROVISIONER) .
+	docker build -t csi-driver-lvm -f cmd/lvmplugin/Dockerfile --build-arg BINARY=$(BINARY_LVMPLUGIN) .
 
 .PHONY: build-provisioner
 build-provisioner: provisioner
