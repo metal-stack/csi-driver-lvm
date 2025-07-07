@@ -1,7 +1,7 @@
-GOOS := linux
-GOARCH := amd64
-CGO_ENABLED := 1
-TAGS := -tags 'netgo'
+GOOS ?= linux
+GOARCH ?= amd64
+GOARM ?= 
+CGO_ENABLED ?= 1
 BINARY_LVMPLUGIN := lvmplugin-$(GOOS)-$(GOARCH)
 BINARY_PROVISIONER:= provisioner-$(GOOS)-$(GOARCH)
 
@@ -9,6 +9,16 @@ SHA := $(shell git rev-parse --short=8 HEAD)
 GITVERSION := $(shell git describe --long --all)
 BUILDDATE := $(shell date --rfc-3339=seconds)
 VERSION := $(or ${VERSION},$(shell git describe --tags --exact-match 2> /dev/null || git symbolic-ref -q --short HEAD || git rev-parse --short HEAD))
+
+GO111MODULE := on
+KUBECONFIG := $(shell pwd)/.kubeconfig
+HELM_REPO := "https://helm.metal-stack.io"
+
+ifeq ($(CI),true)
+  DOCKER_TTY_ARG=
+else
+  DOCKER_TTY_ARG=t
+endif
 
 ifeq ($(CGO_ENABLED),1)
 ifeq ($(GOOS),linux)
@@ -23,23 +33,13 @@ LINKMODE := $(LINKMODE) \
 		 -X 'github.com/metal-stack/v.GitSHA1=$(SHA)' \
 		 -X 'github.com/metal-stack/v.BuildDate=$(BUILDDATE)'
 
-GO111MODULE := on
-KUBECONFIG := $(shell pwd)/.kubeconfig
-HELM_REPO := "https://helm.metal-stack.io"
-
-ifeq ($(CI),true)
-  DOCKER_TTY_ARG=
-else
-  DOCKER_TTY_ARG=t
-endif
-
 all: provisioner lvmplugin
 
 .PHONY: lvmplugin
 lvmplugin:
 	go mod tidy
+	$(TAGS) \
 	go build \
-		$(TAGS) \
 		-ldflags \
 		"$(LINKMODE)" \
 		-o bin/$(BINARY_LVMPLUGIN) \
