@@ -1,7 +1,8 @@
 GOOS ?= linux
 GOARCH ?= amd64
 GOARM ?= 
-CGO_ENABLED ?= 1
+CGO_ENABLED ?= 0
+TAGS := -tags 'osusergo netgo static_build'
 BINARY_LVMPLUGIN := lvmplugin-$(GOOS)-$(GOARCH)
 BINARY_PROVISIONER:= provisioner-$(GOOS)-$(GOARCH)
 
@@ -23,7 +24,6 @@ endif
 ifeq ($(CGO_ENABLED),1)
 ifeq ($(GOOS),linux)
 	LINKMODE := -linkmode external -extldflags '-static -s -w'
-	TAGS := -tags 'osusergo netgo static_build'
 endif
 endif
 
