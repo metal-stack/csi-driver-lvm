@@ -38,8 +38,8 @@ all: provisioner lvmplugin
 .PHONY: lvmplugin
 lvmplugin:
 	go mod tidy
-	$(TAGS) \
 	go build \
+		$(TAGS) \
 		-ldflags \
 		"$(LINKMODE)" \
 		-o bin/$(BINARY_LVMPLUGIN) \
