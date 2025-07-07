@@ -4,9 +4,9 @@ GOARM ?=
 CGO_ENABLED ?= 0
 TAGS := -tags 'osusergo netgo static_build'
 
-BINARY_SUFFIX := $(GOOS)-$(GOARCH)$(if $(GOARM),-$(GOARM))
-BINARY_LVMPLUGIN := lvmplugin-$(BINARY_SUFFIX)
-BINARY_PROVISIONER:= provisioner-$(BINARY_SUFFIX)
+PLATFORM := $(GOOS)/$(GOARCH)$(if $(GOARM),/v$(GOARM))
+BINARY_LVMPLUGIN := $(PLATFORM)/lvmplugin
+BINARY_PROVISIONER:= $(PLATFORM)/provisioner
 
 SHA := $(shell git rev-parse --short=8 HEAD)
 GITVERSION := $(shell git describe --long --all)
@@ -63,11 +63,11 @@ provisioner:
 
 .PHONY: build-plugin
 build-plugin: lvmplugin
-	docker build -t csi-driver-lvm -f cmd/lvmplugin/Dockerfile --build-arg TARGET_ARCH=$(BINARY_LVMPLUGIN) .
+	docker build -t csi-driver-lvm -f cmd/lvmplugin/Dockerfile .
 
 .PHONY: build-provisioner
 build-provisioner: provisioner
-	docker build -t csi-driver-lvm-provisioner -f cmd/provisioner/Dockerfile --build-arg TARGET_ARCH=$(BINARY_PROVISIONER) .
+	docker build -t csi-driver-lvm-provisioner -f cmd/provisioner/Dockerfile .
 
 /dev/loop%:
 	@fallocate --length 2G loop$*.img

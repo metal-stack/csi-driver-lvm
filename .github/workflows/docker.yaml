@@ -94,13 +94,13 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: lvmplugin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-7' || '' }}
-          path: bin/lvmplugin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-7' || '' }}
+          name: lvmplugin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-v7' || '' }}
+          path: bin
 
       - uses: actions/upload-artifact@v4
         with:
-          name: provisioner-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-7' || '' }}
-          path: bin/provisioner-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-7' || '' }}
+          name: provisioner-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-v7' || '' }}
+          path: bin
 
   docker-build:
     runs-on: ubuntu-latest
