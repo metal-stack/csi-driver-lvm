@@ -1,3 +1,18 @@
+GOOS ?= linux
+GOARCH ?= amd64
+GOARM ?= 
+CGO_ENABLED ?= 0
+TAGS := -tags 'osusergo netgo static_build'
+
+PLATFORM := $(GOOS)/$(GOARCH)$(if $(GOARM),/v$(GOARM))
+BINARY_LVMPLUGIN := $(PLATFORM)/lvmplugin
+BINARY_PROVISIONER:= $(PLATFORM)/provisioner
+
+SHA := $(shell git rev-parse --short=8 HEAD)
+GITVERSION := $(shell git describe --long --all)
+BUILDDATE := $(shell date --rfc-3339=seconds)
+VERSION := $(or ${VERSION},$(shell git describe --tags --exact-match 2> /dev/null || git symbolic-ref -q --short HEAD || git rev-parse --short HEAD))
+
 GO111MODULE := on
 KUBECONFIG := $(shell pwd)/.kubeconfig
 HELM_REPO := "https://helm.metal-stack.io"
@@ -8,27 +23,51 @@ else
   DOCKER_TTY_ARG=t
 endif
 
+ifeq ($(CGO_ENABLED),1)
+ifeq ($(GOOS),linux)
+	LINKMODE := -linkmode external -extldflags '-static -s -w'
+endif
+endif
+
+LINKMODE := $(LINKMODE) \
+		 -X 'github.com/metal-stack/v.Version=$(VERSION)' \
+		 -X 'github.com/metal-stack/v.Revision=$(GITVERSION)' \
+		 -X 'github.com/metal-stack/v.GitSHA1=$(SHA)' \
+		 -X 'github.com/metal-stack/v.BuildDate=$(BUILDDATE)'
+
 all: provisioner lvmplugin
 
 .PHONY: lvmplugin
 lvmplugin:
 	go mod tidy
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o ./bin/lvmplugin ./cmd/lvmplugin
-	strip ./bin/lvmplugin
+	go build \
+		$(TAGS) \
+		-ldflags \
+		"$(LINKMODE)" \
+		-o bin/$(BINARY_LVMPLUGIN) \
+		./cmd/lvmplugin 
+	cd bin/ && \
+	sha512sum $(BINARY_LVMPLUGIN) > $(BINARY_LVMPLUGIN).sha512
 
 .PHONY: provisioner
 provisioner:
 	go mod tidy
-	go build -tags netgo -o bin/csi-lvmplugin-provisioner cmd/provisioner/*.go
-	strip bin/csi-lvmplugin-provisioner
+	go build \
+		$(TAGS) \
+		-ldflags \
+		"$(LINKMODE)" \
+		-o bin/$(BINARY_PROVISIONER) \
+		./cmd/provisioner
+	cd bin/ && \
+	sha512sum $(BINARY_PROVISIONER) > $(BINARY_PROVISIONER).sha512
 
 .PHONY: build-plugin
-build-plugin:
-	docker build -t csi-driver-lvm .
+build-plugin: lvmplugin
+	docker build -t csi-driver-lvm -f cmd/lvmplugin/Dockerfile .
 
 .PHONY: build-provisioner
-build-provisioner:
-	docker build -t csi-driver-lvm-provisioner . -f cmd/provisioner/Dockerfile
+build-provisioner: provisioner
+	docker build -t csi-driver-lvm-provisioner -f cmd/provisioner/Dockerfile .
 
 /dev/loop%:
 	@fallocate --length 2G loop$*.img
