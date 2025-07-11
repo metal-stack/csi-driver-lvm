@@ -1,6 +1,17 @@
+GOOS ?= linux
+GOARCH ?= amd64
+GOARM ?= 
+CGO_ENABLED ?= 0
+TAGS := -tags 'osusergo netgo static_build'
+
+PLATFORM := $(GOOS)/$(GOARCH)$(if $(GOARM),/v$(GOARM))
+BINARY_LVMPLUGIN := $(PLATFORM)/lvmplugin
+BINARY_PROVISIONER:= $(PLATFORM)/provisioner
+BINARY_CONTROLLER:= $(PLATFORM)/controller
+
 SHA := $(shell git rev-parse --short=8 HEAD)
 GITVERSION := $(shell git describe --long --all)
-BUILDDATE := $(shell date -Iseconds)
+BUILDDATE := $(shell date --rfc-3339=seconds)
 VERSION := $(or ${VERSION},$(shell git describe --tags --exact-match 2> /dev/null || git symbolic-ref -q --short HEAD || git rev-parse --short HEAD))
 
 GO111MODULE := on
@@ -21,27 +32,51 @@ else
   DOCKER_TTY_ARG=t
 endif
 
+ifeq ($(CGO_ENABLED),1)
+ifeq ($(GOOS),linux)
+	LINKMODE := -linkmode external -extldflags '-static -s -w'
+endif
+endif
+
+LINKMODE := $(LINKMODE) \
+		 -X 'github.com/metal-stack/v.Version=$(VERSION)' \
+		 -X 'github.com/metal-stack/v.Revision=$(GITVERSION)' \
+		 -X 'github.com/metal-stack/v.GitSHA1=$(SHA)' \
+		 -X 'github.com/metal-stack/v.BuildDate=$(BUILDDATE)'
+
 all: provisioner lvmplugin
 
 .PHONY: lvmplugin
 lvmplugin:
 	go mod tidy
-	CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-extldflags "-static"' -o ./bin/lvmplugin ./cmd/lvmplugin
-	strip ./bin/lvmplugin
+	go build \
+		$(TAGS) \
+		-ldflags \
+		"$(LINKMODE)" \
+		-o bin/$(BINARY_LVMPLUGIN) \
+		./cmd/lvmplugin 
+	cd bin/ && \
+	sha512sum $(BINARY_LVMPLUGIN) > $(BINARY_LVMPLUGIN).sha512
 
 .PHONY: provisioner
 provisioner:
 	go mod tidy
-	go build -tags netgo -o bin/csi-lvmplugin-provisioner cmd/provisioner/*.go
-	strip bin/csi-lvmplugin-provisioner
+	go build \
+		$(TAGS) \
+		-ldflags \
+		"$(LINKMODE)" \
+		-o bin/$(BINARY_PROVISIONER) \
+		./cmd/provisioner
+	cd bin/ && \
+	sha512sum $(BINARY_PROVISIONER) > $(BINARY_PROVISIONER).sha512
 
 .PHONY: build-plugin
-build-plugin:
-	docker build -t csi-driver-lvm .
+build-plugin: lvmplugin
+	docker build -t csi-driver-lvm -f cmd/lvmplugin/Dockerfile .
 
 .PHONY: build-provisioner
-build-provisioner:
-	docker build -t csi-driver-lvm-provisioner . -f cmd/provisioner/Dockerfile
+build-provisioner: provisioner
+	docker build -t csi-driver-lvm-provisioner -f cmd/provisioner/Dockerfile .
 
 /dev/loop%:
 	@fallocate --length 2G loop$*.img
@@ -101,21 +136,19 @@ test-cleanup: rm-kind
 
 .PHONY: controller
 controller: generate fmt #vet
-	CGO_ENABLED=0 go build \
-		-tags netgo \
-		-trimpath \
+	go mod tidy
+	go build \
+		$(TAGS) \
 		-ldflags \
-			"-X 'github.com/metal-stack/v.Version=$(VERSION)' \
-			-X 'github.com/metal-stack/v.Revision=$(GITVERSION)' \
-			-X 'github.com/metal-stack/v.GitSHA1=$(SHA)' \
-			-X 'github.com/metal-stack/v.BuildDate=$(BUILDDATE)'" \
-		-o bin/controller cmd/controller/main.go
-	strip bin/controller
-	sha256sum bin/controller > bin/controller.sha256
+		"$(LINKMODE)" \
+		-o bin/$(BINARY_CONTROLLER) \
+		./cmd/controller/main.go
+	cd bin/ && \
+	sha512sum $(BINARY_CONTROLLER) > $(BINARY_CONTROLLER).sha512
 
 .PHONY: build-controller
 build-controller:
-	docker build -f Dockerfile.Controller -t csi-driver-lvm-controller .
+	docker build -t csi-driver-lvm-controller -f cmd/controller/Dockerfile .
 
 .PHONY: manifests
 manifests: controller-gen 
