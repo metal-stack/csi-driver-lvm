@@ -147,7 +147,7 @@ controller: generate fmt #vet
 	sha512sum $(BINARY_CONTROLLER) > $(BINARY_CONTROLLER).sha512
 
 .PHONY: build-controller
-build-controller:
+build-controller: controller
 	docker build -t csi-driver-lvm-controller -f cmd/controller/Dockerfile .
 
 .PHONY: manifests
