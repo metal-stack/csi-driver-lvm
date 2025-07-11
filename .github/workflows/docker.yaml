@@ -15,6 +15,7 @@ env:
   REGISTRY: ghcr.io
   PLUGIN_IMAGE_NAME: ${{ github.repository }}
   PROVISIONER_IMAGE_NAME: ${{ github.repository }}-provisioner
+  CONTROLLER_IMAGE_NAME: ${{ github.repository }}-controller
 
 jobs:
   lint:
@@ -22,45 +23,45 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up Go 1.24
-      uses: actions/setup-go@v5
-      with:
-        go-version: "1.24.x"
+      - name: Set up Go 1.24
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
 
-    - name: Lint
-      uses: golangci/golangci-lint-action@v6
-      with:
-        args: --build-tags integration -p bugs -p unused --timeout=10m
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          args: --build-tags integration -p bugs -p unused --timeout=10m
 
   test:
     name: Test
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: load modules for dm-raid and dm-integrity
-      run: lsmod && sudo modprobe dm-raid && sudo modprobe dm-integrity && lsmod
+      - name: load modules for dm-raid and dm-integrity
+        run: lsmod && sudo modprobe dm-raid && sudo modprobe dm-integrity && lsmod
 
-    - name: Set up Go 1.24
-      uses: actions/setup-go@v5
-      with:
-        go-version: "1.24.x"
+      - name: Set up Go 1.24
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
 
-    - name: Create k8s Kind Cluster
-      uses: helm/kind-action@v1.10.0
-      with:
-        version: v0.24.0
-        install_only: true
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          version: v0.24.0
+          install_only: true
 
-    - name: Test
-      run: |
-        make test
-        make test-cleanup
+      - name: Test
+        run: |
+          make test
+          make test-cleanup
 
   build-platforms:
     runs-on: ubuntu-latest
@@ -82,7 +83,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version-file: "go.mod"
 
       - name: Build
         env:
@@ -90,16 +91,19 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           GOARM: ${{ matrix.arch == 'arm' && '7' || '' }}
         run: |
-          make lvmplugin provisioner
+          make lvmplugin provisioner controller
 
       - uses: actions/upload-artifact@v4
         with:
           name: lvmplugin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-v7' || '' }}
           path: bin
-
       - uses: actions/upload-artifact@v4
         with:
           name: provisioner-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-v7' || '' }}
+          path: bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: controller-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-v7' || '' }}
           path: bin
 
   docker-build:
@@ -131,18 +135,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-
       - name: Download plugin binaries
         uses: actions/download-artifact@v4
         with:
           pattern: lvmplugin-*
           path: bin
           merge-multiple: true
-
       - name: Download provisioner binaries
         uses: actions/download-artifact@v4
         with:
           pattern: provisioner-*
+          path: bin
+          merge-multiple: true
+      - name: Download controller binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: controller-*
           path: bin
           merge-multiple: true
 
@@ -166,4 +174,15 @@ jobs:
           sbom: true
           tags: ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}
           file: cmd/provisioner/Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+
+      - name: Build and push controller image
+        if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          sbom: true
+          tags: ${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE_NAME }}:${{ env.tag }}
+          file: cmd/controller/Dockerfile
           platforms: linux/amd64,linux/arm64,linux/arm/v7

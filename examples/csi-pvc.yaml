@@ -7,5 +7,5 @@ spec:
   - ReadWriteOnce
   resources:
     requests:
-      storage: 100Mi
-  storageClassName: csi-lvm-sc-linear
+      storage: 10Mi
+  storageClassName: csi-driver-lvm-linear

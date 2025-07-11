@@ -12,6 +12,15 @@ This CSI driver is derived from [csi-driver-host-path](https://github.com/kubern
 
 For the special case of block volumes, the filesystem-expansion has to be performed by the app using the block device
 
+## Pod eviction
+
+In case of pod eviction the pod the pvc doesn't get deleted. Therefore the pod can't start on another node due to node-affinity. With the `csi-driver-lvm-controller` it's able to capture these events and delete the pvc.
+
+Following is needed:
+
+- statefulset with volumeClaimTemplate and reference to `csi-driver-lvm` storageclass
+- pvc needs annotation: `metal-stack.io/csi-driver-lvm.is-eviction-allowed: true`
+
 ## Installation ##
 
 **Helm charts for installation are located in a separate repository called [helm-charts](https://github.com/metal-stack/helm-charts). If you would like to contribute to the helm chart, please raise an issue or pull request there.**
@@ -65,6 +74,7 @@ You can create these loop devices like this:
 ```bash
 for i in 100 101; do fallocate -l 1G loop${i}.img ; sudo losetup /dev/loop${i} loop${i}.img; done
 sudo losetup -a
+# https://github.com/util-linux/util-linux/issues/3197
 # use this for recreation or cleanup
 # for i in 100 101; do sudo losetup -d /dev/loop${i}; rm -f loop${i}.img; done
 ```
