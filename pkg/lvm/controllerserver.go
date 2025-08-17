@@ -47,7 +47,7 @@ type controllerServer struct {
 // NewControllerServer
 func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, hostWritePath string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy, imagePullSecret string) (*controllerServer, error) {
 	if ephemeral {
-		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID, imagePullSecret: imagePullSecret}, nil
+		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID}, nil
 	}
 
 	config, err := rest.InClusterConfig()
