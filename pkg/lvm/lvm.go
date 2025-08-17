@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -54,9 +54,10 @@ type Lvm struct {
 	pullPolicy        v1.PullPolicy
 	namespace         string
 
-	ids *identityServer
-	ns  *nodeServer
-	cs  *controllerServer
+	ids             *identityServer
+	ns              *nodeServer
+	cs              *controllerServer
+	imagePullSecret string
 }
 
 var (
@@ -79,6 +80,7 @@ type volumeAction struct {
 	vgName           string
 	hostWritePath    string
 	integrity        bool
+	imagePullSecret  string
 }
 
 const (
@@ -96,7 +98,7 @@ var (
 )
 
 // NewLvmDriver creates the driver
-func NewLvmDriver(driverName, nodeID, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*Lvm, error) {
+func NewLvmDriver(driverName, nodeID, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string, imagePullSecret string) (*Lvm, error) {
 	if driverName == "" {
 		return nil, fmt.Errorf("no driver name provided")
 	}
@@ -134,6 +136,7 @@ func NewLvmDriver(driverName, nodeID, endpoint string, hostWritePath string, eph
 		namespace:         namespace,
 		provisionerImage:  provisionerImage,
 		pullPolicy:        pp,
+		imagePullSecret:   imagePullSecret,
 	}, nil
 }
 
@@ -143,7 +146,7 @@ func (lvm *Lvm) Run() error {
 	// Create GRPC servers
 	lvm.ids = newIdentityServer(lvm.name, lvm.version)
 	lvm.ns = newNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
-	lvm.cs, err = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.hostWritePath, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
+	lvm.cs, err = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.hostWritePath, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy, lvm.imagePullSecret)
 	if err != nil {
 		return err
 	}

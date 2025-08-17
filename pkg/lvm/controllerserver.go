@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -41,12 +41,13 @@ type controllerServer struct {
 	provisionerImage string
 	pullPolicy       v1.PullPolicy
 	namespace        string
+	imagePullSecret  string
 }
 
 // NewControllerServer
-func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, hostWritePath string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy) (*controllerServer, error) {
+func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, vgName string, hostWritePath string, namespace string, provisionerImage string, pullPolicy v1.PullPolicy, imagePullSecret string) (*controllerServer, error) {
 	if ephemeral {
-		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID}, nil
+		return &controllerServer{caps: getControllerServiceCapabilities(nil), nodeID: nodeID, imagePullSecret: imagePullSecret}, nil
 	}
 
 	config, err := rest.InClusterConfig()
@@ -63,10 +64,10 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 			[]csi.ControllerServiceCapability_RPC_Type{
 				csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 				// TODO
-				//				csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
-				//				csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
-				//				csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
-				//				csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
+				//			csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+				//			csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
+				//			csi.ControllerServiceCapability_RPC_CLONE_VOLUME,
+				//			csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 			}),
 		nodeID:           nodeID,
 		devicesPattern:   devicesPattern,
@@ -76,6 +77,7 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 		namespace:        namespace,
 		provisionerImage: provisionerImage,
 		pullPolicy:       pullPolicy,
+		imagePullSecret:  imagePullSecret,
 	}, nil
 }
 
@@ -145,6 +147,7 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		vgName:           cs.vgName,
 		hostWritePath:    cs.hostWritePath,
 		integrity:        integrity,
+		imagePullSecret:  cs.imagePullSecret,
 	}
 	if err := createProvisionerPod(ctx, va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)
@@ -206,6 +209,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		namespace:        cs.namespace,
 		vgName:           cs.vgName,
 		hostWritePath:    cs.hostWritePath,
+		imagePullSecret:  cs.imagePullSecret,
 	}
 	if err := createProvisionerPod(ctx, va); err != nil {
 		klog.Errorf("error creating provisioner pod :%v", err)

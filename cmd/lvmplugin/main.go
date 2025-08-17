@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -46,6 +46,7 @@ var (
 	namespace         = flag.String("namespace", "csi-lvm", "name of namespace")
 	provisionerImage  = flag.String("provisionerimage", "metalstack/csi-lvmplugin-provisioner", "name of provisioner image")
 	pullPolicy        = flag.String("pullpolicy", "ifnotpresent", "pull policy for provisioner image")
+	imagePullSecret   = flag.String("imagepullsecret", "", "name of image pull secret for provisioner pods")
 
 	// Set by the build process
 	version = ""
@@ -69,7 +70,7 @@ func main() {
 }
 
 func handle() {
-	driver, err := lvm.NewLvmDriver(*driverName, *nodeID, *endpoint, *hostWritePath, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName, *namespace, *provisionerImage, *pullPolicy)
+	driver, err := lvm.NewLvmDriver(*driverName, *nodeID, *endpoint, *hostWritePath, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName, *namespace, *provisionerImage, *pullPolicy, *imagePullSecret)
 	if err != nil {
 		fmt.Printf("Failed to initialize driver: %s\n", err.Error())
 		os.Exit(1)
