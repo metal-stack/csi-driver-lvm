@@ -59,15 +59,14 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	var node corev1.Node
 	if err := r.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, &node); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to fetch pvc %q: %w", pod.Spec.NodeName, err)
+		return ctrl.Result{}, fmt.Errorf("unable to fetch node %q: %w", pod.Spec.NodeName, err)
 	}
 
 	if !node.Spec.Unschedulable {
 		return ctrl.Result{}, nil
 	}
 
-	//extract pvc-templates only once for the sts
-	var claimTemplatesScs []string
+	// only permitted for sts with claimtemplate which reference scs of defined provisioner ("csi-driver-lvm")
 	for _, or := range pod.OwnerReferences {
 		if or.Kind != "StatefulSet" {
 			continue
@@ -77,52 +76,29 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, fmt.Errorf("unable to fetch sts %q: %w", or.Name, err)
 		}
 
-		for _, claimTemplate := range sts.Spec.VolumeClaimTemplates {
-			claimTemplatesScs = append(claimTemplatesScs, *claimTemplate.Spec.StorageClassName)
-		}
-	}
-
-	// test if sts of pod has pvc
-	if len(claimTemplatesScs) == 0 {
-		return ctrl.Result{}, nil
-	}
-
-	//iterate over pod pvc and test if deletion on evict is allowed
-	for _, volume := range pod.Spec.Volumes {
-		var pvc corev1.PersistentVolumeClaim
-
-		pvcName := volume.PersistentVolumeClaim
-		if volume.PersistentVolumeClaim == nil {
-			// skipping no pvc volumes
-			continue
-		}
-
-		if err := r.Get(ctx, types.NamespacedName{Name: pvcName.ClaimName, Namespace: pod.Namespace}, &pvc); err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to fetch pvc %q: %w", pvcName.ClaimName, err)
-		}
-
-		var sc storagev1.StorageClass
-		if err := r.Get(ctx, types.NamespacedName{Name: *pvc.Spec.StorageClassName}, &sc); err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to fetch sc %q: %w", *pvc.Spec.StorageClassName, err)
-		}
-
-		if sc.Provisioner != r.cfg.ProvisionerName {
-			//skipping pvcs not provisioned by csi-driver-lvm
-			continue
-		}
-
-		if !slices.Contains(claimTemplatesScs, sc.Name) {
-			//skipping pvcs which don't contain a claim-template with a csi-driver-lvm scs
-			continue
-		}
-
-		if value, ok := pvc.Annotations[isEvictionAllowedAnnotation]; ok {
-			isEvictionAllowed, err := strconv.ParseBool(value)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("unable to parse annotation for %q: %w", isEvictionAllowedAnnotation, err)
+		// iterate over pvcs and test if storageclass is defined provisioner ("csi-driver-lvm")
+		for _, pvc := range sts.Spec.VolumeClaimTemplates {
+			var sc storagev1.StorageClass
+			if err := r.Get(ctx, types.NamespacedName{Name: *pvc.Spec.StorageClassName}, &sc); err != nil {
+				return ctrl.Result{}, fmt.Errorf("unable to fetch sc %q: %w", *pvc.Spec.StorageClassName, err)
 			}
 
-			if isEvictionAllowed {
+			if sc.Provisioner != r.cfg.ProvisionerName {
+				continue
+			}
+
+			pvcAllowed, err := strconv.ParseBool(pvc.Annotations[isEvictionAllowedAnnotation])
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("unable to parse pvc annotation for %q: %w", isEvictionAllowedAnnotation, err)
+			}
+
+			podAllowed, err := strconv.ParseBool(pod.Annotations[isEvictionAllowedAnnotation])
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("unable to parse pod annotation for %q: %w", isEvictionAllowedAnnotation, err)
+			}
+
+			// deletion of pvc allowed if pvc OR pod has annotation
+			if pvcAllowed || podAllowed {
 				if err := r.Delete(ctx, &pvc); err != nil {
 					return ctrl.Result{}, fmt.Errorf("unable to delete pvc %q: %w", pvc.Name, err)
 				}
