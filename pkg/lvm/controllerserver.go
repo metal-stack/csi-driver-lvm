@@ -32,6 +32,7 @@ import (
 )
 
 type controllerServer struct {
+	csi.UnimplementedControllerServer
 	caps             []*csi.ControllerServiceCapability
 	nodeID           string
 	devicesPattern   string
@@ -111,9 +112,13 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	}
 
 	lvmType := req.GetParameters()["type"]
-	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
+	switch lvmType {
+	case "linear", "mirror", "striped":
+		// These are supported lvm types
+	default:
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
+
 	integrity, err := strconv.ParseBool(req.GetParameters()["integrity"])
 	if err != nil {
 		klog.Warningf("Could not parse 'integrity' request parameter, assuming false: %s", err)

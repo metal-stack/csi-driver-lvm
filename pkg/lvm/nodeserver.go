@@ -38,6 +38,7 @@ import (
 const topologyKeyNode = "topology.lvm.csi/node"
 
 type nodeServer struct {
+	csi.UnimplementedNodeServer
 	nodeID            string
 	ephemeral         bool
 	maxVolumesPerNode int64
