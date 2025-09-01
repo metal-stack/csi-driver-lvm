@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: one-replica-nginx
+  name: nginx-no-annotation
   labels:
-    app: nginx
+    app: nginx-no-annotation
 spec:
-  serviceName: "nginx" 
+  serviceName: "nginx-no-annotation" 
   replicas: 1
   selector:
     matchLabels:
-      app: nginx
+      app: nginx-no-annotation
   template:
     metadata:
       labels:
-        app: nginx
+        app: nginx-no-annotation
     spec:
       containers:
       - name: nginx
@@ -26,12 +26,9 @@ spec:
   volumeClaimTemplates:
   - metadata:
       name: my-csi-volume
-      annotations:
-        metal-stack.io/csi-driver-lvm.is-eviction-allowed: "true"
     spec:
       accessModes: ["ReadWriteOnce"]
       resources:
         requests:
           storage: 1Gi
       storageClassName: csi-driver-lvm-linear
-
