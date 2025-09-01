@@ -1,4 +1,4 @@
-FROM alpine:3.21
+FROM alpine:3.22
 ARG TARGETPLATFORM
 LABEL maintainer="metal-stack authors <info@metal-stack.io>"
 
