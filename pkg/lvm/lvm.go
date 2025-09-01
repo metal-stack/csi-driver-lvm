@@ -526,7 +526,10 @@ func CreateLVS(vg string, name string, size uint64, lvmType string, integrity bo
 		return "", fmt.Errorf("size must be greater than 0")
 	}
 
-	if !(lvmType == "linear" || lvmType == "mirror" || lvmType == "striped") {
+	switch lvmType {
+	case "linear", "mirror", "striped":
+		// These are supported lvm types
+	default:
 		return "", fmt.Errorf("lvmType is incorrect: %s", lvmType)
 	}
 
