@@ -135,7 +135,7 @@ rm-kind:
 
 RERUN ?= 1
 .PHONY: test
-test: /dev/loop100 /dev/loop101 kind
+test: build-controller build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
 	@cd tests && docker build -t csi-bats . && cd -
 	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \

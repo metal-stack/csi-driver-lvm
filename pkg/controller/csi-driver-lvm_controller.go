@@ -65,46 +65,25 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	podString, ok := pod.Annotations[isEvictionAllowedAnnotation]
-	podAllowed := false
-	if ok {
-		value, err := strconv.ParseBool(podString)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to parse pod annotation value for %q: %w", isEvictionAllowedAnnotation, err)
+	// helper to parse
+	parseBoolAnn := func(ann map[string]string, owner string) (bool, error) {
+		if v, ok := ann[isEvictionAllowedAnnotation]; ok {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return false, fmt.Errorf("unable to parse %s annotation value for %q: %w", owner, isEvictionAllowedAnnotation, err)
+			}
+			return b, nil
 		}
-		podAllowed = value
+		return false, nil
 	}
 
-	// eviction annotation on pod
-	if podAllowed {
-		for _, volume := range pod.Spec.Volumes {
-			if volume.PersistentVolumeClaim == nil {
-				continue
-			}
-
-			var pvc corev1.PersistentVolumeClaim
-			if err := r.Get(ctx, types.NamespacedName{Name: volume.PersistentVolumeClaim.ClaimName, Namespace: pod.Namespace}, &pvc); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unbale to fetch pvc %q: %w", volume.PersistentVolumeClaim.ClaimName, err)
-			}
-
-			var sc storagev1.StorageClass
-			if err := r.Get(ctx, types.NamespacedName{Name: *pvc.Spec.StorageClassName}, &sc); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unbale to fetch sc %q: %w", *pvc.Spec.StorageClassName, err)
-
-			}
-			if sc.Provisioner != r.cfg.ProvisionerName {
-				continue
-			}
-
-			r.Log.Info("trying to delete pvc because of eviction", "pvc", pvc.Name, "pod", pod.Name, "namespace", pvc.Namespace, "node", node.Name, "annotation-holder", "pod")
-			if err := r.Delete(ctx, &pvc); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unable to delete pvc %q: %w", pvc.Name, err)
-			}
-			r.Log.Info("deleted PVC because of eviction", "pvc", pvc.Name, "pod", pod.Name, "node", node.Name)
-		}
+	podAllowed, err := parseBoolAnn(pod.Annotations, "pod")
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
-	// eviction annotation on pvc
+	// pvc-names of sts
+	var belongs []string
 	for _, or := range pod.OwnerReferences {
 		if or.Kind != "StatefulSet" {
 			continue
@@ -113,48 +92,71 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err := r.Get(ctx, types.NamespacedName{Name: or.Name, Namespace: pod.Namespace}, &sts); err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to fetch sts %q: %w", or.Name, err)
 		}
-
-		// iterate over claimTemplate and delete pvc with provisioner-sc and eviction annotation
-		for _, claimTemplate := range sts.Spec.VolumeClaimTemplates {
-			var sc storagev1.StorageClass
-			if err := r.Get(ctx, types.NamespacedName{Name: *claimTemplate.Spec.StorageClassName}, &sc); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unable to fetch sc %q: %w", *claimTemplate.Spec.StorageClassName, err)
-			}
-
-			if sc.Provisioner != r.cfg.ProvisionerName {
-				continue
-			}
-
-			for _, volume := range pod.Spec.Volumes {
-				if volume.PersistentVolumeClaim == nil {
-					continue
-				}
-
-				var pvc corev1.PersistentVolumeClaim
-				if err := r.Get(ctx, types.NamespacedName{Name: volume.PersistentVolumeClaim.ClaimName, Namespace: pod.Namespace}, &pvc); err != nil {
-					return ctrl.Result{}, fmt.Errorf("unbale to fetch pvc %q: %w", volume.PersistentVolumeClaim.ClaimName, err)
-				}
-
-				pvcString, ok := pvc.Annotations[isEvictionAllowedAnnotation]
-				pvcAllowed := false
-				if ok {
-					value, err := strconv.ParseBool(pvcString)
-					if err != nil {
-						return ctrl.Result{}, fmt.Errorf("unable to parse pvc annotation value for %q: %w", isEvictionAllowedAnnotation, err)
-					}
-					pvcAllowed = value
-				}
-				if pvcAllowed {
-					if pvc.Name == claimTemplate.Name+"-"+pod.Name {
-						r.Log.Info("trying to delete pvc because of eviction", "pvc", pvc.Name, "pod", pod.Name, "namespace", pvc.Namespace, "node", node.Name, "annotation-holder", "pvc")
-						if err := r.Delete(ctx, &pvc); err != nil {
-							return ctrl.Result{}, fmt.Errorf("unable to delete pvc %q: %w", pvc.Name, err)
-						}
-						r.Log.Info("deleted PVC because of eviction", "pvc", pvc.Name, "pod", pod.Name, "node", node.Name)
-					}
-				}
-			}
+		for _, ct := range sts.Spec.VolumeClaimTemplates {
+			pvcName := ct.Name + "-" + pod.Name
+			belongs = append(belongs, pvcName)
 		}
+		break
+	}
+
+	// helper to test provisioner of sc
+	isManagedSC := func(scName *string) (bool, error) {
+		if scName == nil {
+			return false, nil
+		}
+		var sc storagev1.StorageClass
+		if err := r.Get(ctx, types.NamespacedName{Name: *scName}, &sc); err != nil {
+			return false, fmt.Errorf("unable to fetch sc %q: %w", *scName, err)
+		}
+		return sc.Provisioner == r.cfg.ProvisionerName, nil
+	}
+
+	// iterate over volumes of pod
+	// 1. only pvc volumes
+	// 2. test for managed sc of pvc
+	// 3. test if pvc-name is in derivated pvc-names of sts
+	// 4. delete pvc only if belongs to sts and annotation is set on pod or pvc
+	for _, volume := range pod.Spec.Volumes {
+		if volume.PersistentVolumeClaim == nil {
+			continue
+		}
+
+		var pvc corev1.PersistentVolumeClaim
+		if err := r.Get(ctx, types.NamespacedName{
+			Name:      volume.PersistentVolumeClaim.ClaimName,
+			Namespace: pod.Namespace,
+		}, &pvc); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to fetch pvc %q: %w", volume.PersistentVolumeClaim.ClaimName, err)
+		}
+
+		managed, err := isManagedSC(pvc.Spec.StorageClassName)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if !managed {
+			continue
+		}
+
+		pvcAllowed, err := parseBoolAnn(pvc.Annotations, "pvc")
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		pvcBelongsToSTS := slices.Contains(belongs, pvc.Name)
+		allowed := pvcBelongsToSTS && (podAllowed || pvcAllowed)
+		if !allowed {
+			continue
+		}
+
+		r.Log.Info("trying to delete pvc because of eviction",
+			"pvc", pvc.Name, "pod", pod.Name, "namespace", pvc.Namespace,
+			"node", node.Name)
+
+		if err := r.Delete(ctx, &pvc); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to delete pvc %q: %w", pvc.Name, err)
+		}
+		r.Log.Info("deleted PVC because of eviction", "pvc", pvc.Name, "pod", pod.Name, "node", node.Name)
 	}
 	return ctrl.Result{}, nil
 }
