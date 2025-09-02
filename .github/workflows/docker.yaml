@@ -44,8 +44,8 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v5
 
-      - name: load modules for dm-raid and dm-integrity
-        run: lsmod && sudo modprobe dm-raid && sudo modprobe dm-integrity && lsmod
+    - name: load modules for dm-raid and dm-integrity
+      run: lsmod && sudo modprobe dm-raid && sudo modprobe dm-integrity && lsmod
 
     - name: Set up Go 1.25
       uses: actions/setup-go@v5

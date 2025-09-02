@@ -76,7 +76,7 @@ lvmplugin:
 		-ldflags \
 		"$(LINKMODE)" \
 		-o bin/$(BINARY_LVMPLUGIN) \
-		./cmd/lvmplugin
+		./cmd/lvmplugin 
 	cd bin/ && \
 	sha512sum $(BINARY_LVMPLUGIN) > $(BINARY_LVMPLUGIN).sha512
 
@@ -135,7 +135,7 @@ rm-kind:
 
 RERUN ?= 1
 .PHONY: test
-test: build-controller build-plugin build-provisioner /dev/loop100 /dev/loop101 kind
+test: build-plugin build-provisioner build-controller /dev/loop100 /dev/loop101 kind
 	@cd tests && docker build -t csi-bats . && cd -
 	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \
@@ -173,7 +173,7 @@ build-controller: controller
 	docker build -t csi-driver-lvm-controller -f cmd/controller/Dockerfile .
 
 .PHONY: manifests
-manifests: controller-gen
+manifests: controller-gen 
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 deploy: manifests
@@ -181,7 +181,7 @@ deploy: manifests
 	kustomize build config/default | kubectl apply -f -
 
 .PHONY: undeploy
-undeploy:
+undeploy: 
 	kustomize build config/default | kubectl delete -f -
 
 .PHONY: generate
@@ -205,9 +205,9 @@ vet:
 controller-gen: $(CONTROLLER_GEN)
 $(CONTROLLER_GEN): $(LOCALBIN)
 	test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
-	GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+	GOOS= GOARCH= GOARM= GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
-.PHONY: setup-envtest
+.PHONY: setup-envtest 
 setup-envtest: $(ENVTEST)
 $(ENVTEST): $(LOCALBIN)
-	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	test -s $(LOCALBIN)/setup-envtest || GOOS= GOARCH= GOARM= GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
