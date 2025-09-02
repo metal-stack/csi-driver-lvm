@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -54,9 +54,10 @@ type Lvm struct {
 	pullPolicy        v1.PullPolicy
 	namespace         string
 
-	ids *identityServer
-	ns  *nodeServer
-	cs  *controllerServer
+	ids             *identityServer
+	ns              *nodeServer
+	cs              *controllerServer
+	imagePullSecret string
 }
 
 var (
@@ -79,6 +80,7 @@ type volumeAction struct {
 	vgName           string
 	hostWritePath    string
 	integrity        bool
+	imagePullSecret  string
 }
 
 const (
@@ -96,7 +98,7 @@ var (
 )
 
 // NewLvmDriver creates the driver
-func NewLvmDriver(driverName, nodeID, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*Lvm, error) {
+func NewLvmDriver(driverName, nodeID, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string, imagePullSecret string) (*Lvm, error) {
 	if driverName == "" {
 		return nil, fmt.Errorf("no driver name provided")
 	}
@@ -134,6 +136,7 @@ func NewLvmDriver(driverName, nodeID, endpoint string, hostWritePath string, eph
 		namespace:         namespace,
 		provisionerImage:  provisionerImage,
 		pullPolicy:        pp,
+		imagePullSecret:   imagePullSecret,
 	}, nil
 }
 
@@ -143,7 +146,7 @@ func (lvm *Lvm) Run() error {
 	// Create GRPC servers
 	lvm.ids = newIdentityServer(lvm.name, lvm.version)
 	lvm.ns = newNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
-	lvm.cs, err = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.hostWritePath, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
+	lvm.cs, err = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.hostWritePath, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy, lvm.imagePullSecret)
 	if err != nil {
 		return err
 	}
@@ -278,6 +281,10 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 	hostPathType := v1.HostPathDirectoryOrCreate
 	privileged := true
 	mountPropagationBidirectional := v1.MountPropagationBidirectional
+	imagePullSecrets := []v1.LocalObjectReference{}
+	if va.imagePullSecret != "" {
+		imagePullSecrets = append(imagePullSecrets, v1.LocalObjectReference{Name: va.imagePullSecret})
+	}
 	provisionerPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: string(va.action) + "-" + va.name,
@@ -285,112 +292,35 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 		Spec: v1.PodSpec{
 			RestartPolicy: v1.RestartPolicyNever,
 			NodeName:      va.nodeName,
-			Tolerations: []v1.Toleration{
-				{
-					Operator: v1.TolerationOpExists,
+			Tolerations:   []v1.Toleration{{Operator: v1.TolerationOpExists}},
+			Containers: []v1.Container{{
+				Name:    "csi-lvmplugin-" + string(va.action),
+				Image:   va.provisionerImage,
+				Command: []string{"/csi-lvmplugin-provisioner"},
+				Args:    args,
+				VolumeMounts: []v1.VolumeMount{
+					{Name: "devices", ReadOnly: false, MountPath: "/dev", MountPropagation: &mountPropagationBidirectional},
+					{Name: "modules", ReadOnly: false, MountPath: "/lib/modules"},
+					{Name: "lvmbackup", ReadOnly: false, MountPath: "/etc/lvm/backup", MountPropagation: &mountPropagationBidirectional},
+					{Name: "lvmcache", ReadOnly: false, MountPath: "/etc/lvm/cache", MountPropagation: &mountPropagationBidirectional},
+					{Name: "lvmlock", ReadOnly: false, MountPath: "/run/lock/lvm", MountPropagation: &mountPropagationBidirectional},
 				},
-			},
-			Containers: []v1.Container{
-				{
-					Name:    "csi-lvmplugin-" + string(va.action),
-					Image:   va.provisionerImage,
-					Command: []string{"/csi-lvmplugin-provisioner"},
-					Args:    args,
-					VolumeMounts: []v1.VolumeMount{
-						{
-							Name:             "devices",
-							ReadOnly:         false,
-							MountPath:        "/dev",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:      "modules",
-							ReadOnly:  false,
-							MountPath: "/lib/modules",
-						},
-						{
-							Name:             "lvmbackup",
-							ReadOnly:         false,
-							MountPath:        "/etc/lvm/backup",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:             "lvmcache",
-							ReadOnly:         false,
-							MountPath:        "/etc/lvm/cache",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:             "lvmlock",
-							ReadOnly:         false,
-							MountPath:        "/run/lock/lvm",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-					},
-					TerminationMessagePath: "/termination.log",
-					ImagePullPolicy:        va.pullPolicy,
-					SecurityContext: &v1.SecurityContext{
-						Privileged: &privileged,
-					},
-					Resources: v1.ResourceRequirements{
-						Requests: v1.ResourceList{
-							"cpu":    resource.MustParse("50m"),
-							"memory": resource.MustParse("50Mi"),
-						},
-						Limits: v1.ResourceList{
-							"cpu":    resource.MustParse("100m"),
-							"memory": resource.MustParse("100Mi"),
-						},
-					},
+				TerminationMessagePath: "/termination.log",
+				ImagePullPolicy:        va.pullPolicy,
+				SecurityContext:        &v1.SecurityContext{Privileged: &privileged},
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{"cpu": resource.MustParse("50m"), "memory": resource.MustParse("50Mi")},
+					Limits:   v1.ResourceList{"cpu": resource.MustParse("100m"), "memory": resource.MustParse("100Mi")},
 				},
-			},
+			}},
 			Volumes: []v1.Volume{
-				{
-					Name: "devices",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: "/dev",
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "modules",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: "/lib/modules",
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmbackup",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "backup"),
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmcache",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "cache"),
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmlock",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "lock"),
-							Type: &hostPathType,
-						},
-					},
-				},
+				{Name: "devices", VolumeSource: v1.VolumeSource{HostPath: &v1.HostPathVolumeSource{Path: "/dev", Type: &hostPathType}}},
+				{Name: "modules", VolumeSource: v1.VolumeSource{HostPath: &v1.HostPathVolumeSource{Path: "/lib/modules", Type: &hostPathType}}},
+				{Name: "lvmbackup", VolumeSource: v1.VolumeSource{HostPath: &v1.HostPathVolumeSource{Path: filepath.Join(va.hostWritePath, "backup"), Type: &hostPathType}}},
+				{Name: "lvmcache", VolumeSource: v1.VolumeSource{HostPath: &v1.HostPathVolumeSource{Path: filepath.Join(va.hostWritePath, "cache"), Type: &hostPathType}}},
+				{Name: "lvmlock", VolumeSource: v1.VolumeSource{HostPath: &v1.HostPathVolumeSource{Path: filepath.Join(va.hostWritePath, "lock"), Type: &hostPathType}}},
 			},
+			ImagePullSecrets: imagePullSecrets,
 		},
 	}
 
