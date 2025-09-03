@@ -18,11 +18,13 @@ package lvm
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 	v1 "k8s.io/api/core/v1"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,6 +65,7 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 		caps: getControllerServiceCapabilities(
 			[]csi.ControllerServiceCapability_RPC_Type{
 				csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+				csi.ControllerServiceCapability_RPC_GET_CAPACITY,
 				// TODO
 				//				csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 				//				csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
@@ -284,4 +287,46 @@ func getControllerServiceCapabilities(cl []csi.ControllerServiceCapability_RPC_T
 	}
 
 	return csc
+}
+
+func (cs *controllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
+	if err := cs.validateControllerServiceRequest(csi.ControllerServiceCapability_RPC_GET_CAPACITY); err != nil {
+		klog.V(3).Infof("invalid get capacity req: %v", req)
+		return nil, err
+	}
+
+	nodeName := req.GetAccessibleTopology().GetSegments()[topologyKeyNode]
+	klog.Infof("Getting capacity for node: %s", nodeName)
+
+	lvmType := req.GetParameters()["type"]
+	switch lvmType {
+	case "linear", "mirror", "striped":
+		// These are supported lvm types
+	default:
+		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
+	}
+
+	va := volumeAction{
+		action:   "capacity",
+		name:     fmt.Sprintf("%s-%s", nodeName, lvmType),
+		nodeName: nodeName, lvmType: lvmType,
+		pullPolicy:       cs.pullPolicy,
+		provisionerImage: cs.provisionerImage,
+		kubeClient:       cs.kubeClient,
+		namespace:        cs.namespace,
+		vgName:           cs.vgName,
+		hostWritePath:    cs.hostWritePath,
+		devicesPattern:   cs.devicesPattern,
+	}
+	totalBytes, err := createCapacityPod(ctx, va)
+	if err != nil {
+		return nil, err
+	}
+
+	return &csi.GetCapacityResponse{
+		AvailableCapacity: totalBytes,
+		MaximumVolumeSize: wrapperspb.Int64(totalBytes),
+		MinimumVolumeSize: wrapperspb.Int64(0),
+	}, nil
+
 }

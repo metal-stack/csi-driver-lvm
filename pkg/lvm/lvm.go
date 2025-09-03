@@ -18,6 +18,7 @@ package lvm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"k8s.io/klog/v2"
 )
@@ -81,12 +83,38 @@ type volumeAction struct {
 	integrity        bool
 }
 
+type pvReport struct {
+	Report []struct {
+		PV []struct {
+			PVName string `json:"pv_name"`
+			PVFree string `json:"pv_free"`
+		} `json:"pv"`
+	} `json:"report"`
+}
+
+func (p *pvReport) totalFree() (int64, error) {
+	totalFree := int64(0)
+	for _, report := range p.Report {
+		for _, pv := range report.PV {
+			free, err := strconv.ParseInt(pv.PVFree, 10, 0)
+			if err != nil {
+				return 0, fmt.Errorf("failed to parse free space for device %s with error: %w", pv.PVName, err)
+			}
+			totalFree += free
+		}
+	}
+	return totalFree, nil
+}
+
 const (
-	linearType         = "linear"
-	stripedType        = "striped"
-	mirrorType         = "mirror"
+	linearType  = "linear"
+	stripedType = "striped"
+	mirrorType  = "mirror"
+
 	actionTypeCreate   = "create"
 	actionTypeDelete   = "delete"
+	actionTypeCapacity = "capacity"
+
 	pullIfNotPresent   = "ifnotpresent"
 	fsTypeRegexpString = `TYPE="(\w+)"`
 )
@@ -252,6 +280,209 @@ func umountLV(targetPath string) {
 	if err != nil {
 		klog.Errorf("unable to umount %s output:%s err:%v", targetPath, string(out), err)
 	}
+}
+
+func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err error) {
+	if va.name == "" || va.nodeName == "" {
+		return 0, fmt.Errorf("invalid empty name or path or node")
+	}
+	if va.action != actionTypeCapacity {
+		return 0, fmt.Errorf("unallowed action for capacityPod")
+	}
+
+	// args need to be one string for sh command -> shell needed for globbing (expansion)
+	args := fmt.Sprintf(
+		"pvs %s --units B --nosuffix --reportformat json 2>&1",
+		va.devicesPattern,
+	)
+
+	klog.Infof("start capacityPod with args: %s", args)
+	hostPathType := v1.HostPathDirectoryOrCreate
+	privileged := true
+	mountPropagationBidirectional := v1.MountPropagationBidirectional
+	capacityPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: string(va.action) + "-" + va.name,
+		},
+		Spec: v1.PodSpec{
+			RestartPolicy: v1.RestartPolicyNever,
+			NodeName:      va.nodeName,
+			Tolerations: []v1.Toleration{
+				{
+					Operator: v1.TolerationOpExists,
+				},
+			},
+			Containers: []v1.Container{
+				{
+					Name:    "csi-lvmplugin-" + string(va.action),
+					Image:   va.provisionerImage,
+					Command: []string{"/bin/sh", "-c"},
+					Args:    []string{args},
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:             "devices",
+							ReadOnly:         false,
+							MountPath:        "/dev",
+							MountPropagation: &mountPropagationBidirectional,
+						},
+						{
+							Name:      "modules",
+							ReadOnly:  false,
+							MountPath: "/lib/modules",
+						},
+						{
+							Name:             "lvmbackup",
+							ReadOnly:         false,
+							MountPath:        "/etc/lvm/backup",
+							MountPropagation: &mountPropagationBidirectional,
+						},
+						{
+							Name:             "lvmcache",
+							ReadOnly:         false,
+							MountPath:        "/etc/lvm/cache",
+							MountPropagation: &mountPropagationBidirectional,
+						},
+						{
+							Name:             "lvmlock",
+							ReadOnly:         false,
+							MountPath:        "/run/lock/lvm",
+							MountPropagation: &mountPropagationBidirectional,
+						},
+					},
+					TerminationMessagePath: "/termination.log",
+					ImagePullPolicy:        va.pullPolicy,
+					SecurityContext: &v1.SecurityContext{
+						Privileged: &privileged,
+					},
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							"cpu":    resource.MustParse("50m"),
+							"memory": resource.MustParse("50Mi"),
+						},
+						Limits: v1.ResourceList{
+							"cpu":    resource.MustParse("100m"),
+							"memory": resource.MustParse("100Mi"),
+						},
+					},
+				},
+			},
+			Volumes: []v1.Volume{
+				{
+					Name: "devices",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/dev",
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "modules",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "/lib/modules",
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "lvmbackup",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: filepath.Join(va.hostWritePath, "backup"),
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "lvmcache",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: filepath.Join(va.hostWritePath, "cache"),
+							Type: &hostPathType,
+						},
+					},
+				},
+				{
+					Name: "lvmlock",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: filepath.Join(va.hostWritePath, "lock"),
+							Type: &hostPathType,
+						},
+					},
+				},
+			},
+		},
+	}
+	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(ctx, capacityPod, metav1.CreateOptions{})
+	if err != nil && !k8serror.IsAlreadyExists(err) {
+		return 0, err
+	}
+
+	defer func() {
+		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(ctx, capacityPod.Name, metav1.DeleteOptions{})
+		if e != nil {
+			klog.Errorf("unable to delete the capacity pod: %v", e)
+		}
+	}()
+	completed := false
+	retrySeconds := 60
+	podLogRequest := &rest.Request{}
+	for range retrySeconds {
+		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, capacityPod.Name, metav1.GetOptions{})
+		if pod.Status.Phase == v1.PodFailed {
+			// pod terminated in time, but with failure
+			// return ResourceExhausted so the requesting pod can be rescheduled to another node
+			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
+			klog.Info("capacity pod terminated with failure")
+			return 0, status.Error(codes.ResourceExhausted, "capacity pod failed")
+		}
+		if err != nil {
+			klog.Errorf("error reading capacity pod:%v", err)
+		} else if pod.Status.Phase == v1.PodSucceeded {
+			klog.Info("capacitypod terminated successfully")
+			podLogRequest = va.kubeClient.CoreV1().Pods(va.namespace).GetLogs(capacityPod.Name, &v1.PodLogOptions{})
+			completed = true
+			break
+		}
+		klog.Infof("capacity pod status:%s", pod.Status.Phase)
+		time.Sleep(1 * time.Second)
+	}
+	if !completed {
+		return 0, fmt.Errorf("create process timeout after %v seconds", retrySeconds)
+	}
+
+	podLogRequest.Do(ctx)
+	resp := podLogRequest.Do(ctx)
+	if resp.Error() != nil {
+		return 0, fmt.Errorf("failed to get logs from pv capacity pod: %w node:%s", resp.Error(), va.nodeName)
+	}
+	logs, err := resp.Raw()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read logs from pv capacity pod: %w node:%s", err, va.nodeName)
+	}
+
+	pvReport := pvReport{}
+	err = json.Unmarshal(logs, &pvReport)
+	if err != nil {
+		return 0, fmt.Errorf("failed to format pvs output: %w node:%s", err, va.nodeName)
+	}
+	totalBytes, err := pvReport.totalFree()
+	if err != nil {
+		return 0, fmt.Errorf("%w node:%s", err, va.nodeName)
+	}
+
+	lvmTypeBytes := int64(0)
+	switch va.lvmType {
+	case linearType, stripedType:
+		lvmTypeBytes = totalBytes
+	case mirrorType:
+		lvmTypeBytes = totalBytes / 2
+	}
+
+	klog.Infof("pvs output for remaining pv capacity: %d bytes node:%s", lvmTypeBytes, va.nodeName)
+	return lvmTypeBytes, nil
 }
 
 func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
