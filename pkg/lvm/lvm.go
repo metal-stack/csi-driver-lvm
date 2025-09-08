@@ -85,22 +85,25 @@ type volumeAction struct {
 
 type pvReport struct {
 	Report []struct {
-		PV []struct {
-			PVName string `json:"pv_name"`
-			PVFree string `json:"pv_free"`
-		} `json:"pv"`
+		VG []struct {
+			VGName string `json:"vg_name"`
+			VGFree string `json:"vg_free"`
+		} `json:"vg"`
 	} `json:"report"`
 }
 
-func (p *pvReport) totalFree() (int64, error) {
+func (p *pvReport) totalFree(vgName string) (int64, error) {
 	totalFree := int64(0)
 	for _, report := range p.Report {
-		for _, pv := range report.PV {
-			free, err := strconv.ParseInt(pv.PVFree, 10, 0)
-			if err != nil {
-				return 0, fmt.Errorf("failed to parse free space for device %s with error: %w", pv.PVName, err)
+		for _, vg := range report.VG {
+			if vg.VGName != vgName {
+				continue
 			}
-			totalFree += free
+			free, err := strconv.ParseInt(vg.VGFree, 10, 0)
+			if err != nil {
+				return 0, fmt.Errorf("failed to parse free space for device %s with error: %w", vg.VGName, err)
+			}
+			totalFree = free
 		}
 	}
 	return totalFree, nil
@@ -292,8 +295,8 @@ func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err 
 
 	// args need to be one string for sh command -> shell needed for globbing (expansion)
 	args := fmt.Sprintf(
-		"pvs %s --units B --nosuffix --reportformat json 2>&1",
-		va.devicesPattern,
+		"vgs %s --units B --nosuffix --reportformat json 2>&1",
+		va.vgName,
 	)
 
 	klog.Infof("start capacityPod with args: %s", args)
@@ -466,9 +469,9 @@ func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err 
 	pvReport := pvReport{}
 	err = json.Unmarshal(logs, &pvReport)
 	if err != nil {
-		return 0, fmt.Errorf("failed to format pvs output: %w node:%s", err, va.nodeName)
+		return 0, fmt.Errorf("failed to format vgs output: %w node:%s", err, va.nodeName)
 	}
-	totalBytes, err := pvReport.totalFree()
+	totalBytes, err := pvReport.totalFree(va.vgName)
 	if err != nil {
 		return 0, fmt.Errorf("%w node:%s", err, va.nodeName)
 	}
@@ -481,7 +484,7 @@ func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err 
 		lvmTypeBytes = totalBytes / 2
 	}
 
-	klog.Infof("pvs output for remaining pv capacity: %d bytes node:%s", lvmTypeBytes, va.nodeName)
+	klog.Infof("vgs output for remaining pv capacity: %d bytes node:%s", lvmTypeBytes, va.nodeName)
 	return lvmTypeBytes, nil
 }
 
