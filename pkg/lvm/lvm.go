@@ -83,7 +83,7 @@ type volumeAction struct {
 	integrity        bool
 }
 
-type pvReport struct {
+type vgReport struct {
 	Report []struct {
 		VG []struct {
 			VGName string `json:"vg_name"`
@@ -92,7 +92,7 @@ type pvReport struct {
 	} `json:"report"`
 }
 
-func (p *pvReport) totalFree(vgName string) (int64, error) {
+func (p *vgReport) totalFree(vgName string) (int64, error) {
 	totalFree := int64(0)
 	for _, report := range p.Report {
 		for _, vg := range report.VG {
@@ -294,10 +294,11 @@ func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err 
 	}
 
 	// args need to be one string for sh command -> shell needed for globbing (expansion)
-	args := fmt.Sprintf(
-		"vgs %s --units B --nosuffix --reportformat json 2>&1",
-		va.vgName,
-	)
+	// args := fmt.Sprintf(
+	// 	"vgs %s --units B --nosuffix --reportformat json 2>&1",
+	// 	va.vgName,
+	// )
+	args := []string{va.vgName, "--units", "B", "--nosuffix", "--reportformat", "json"}
 
 	klog.Infof("start capacityPod with args: %s", args)
 	hostPathType := v1.HostPathDirectoryOrCreate
@@ -319,8 +320,8 @@ func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err 
 				{
 					Name:    "csi-lvmplugin-" + string(va.action),
 					Image:   va.provisionerImage,
-					Command: []string{"/bin/sh", "-c"},
-					Args:    []string{args},
+					Command: []string{"vgs"},
+					Args:    args,
 					VolumeMounts: []v1.VolumeMount{
 						{
 							Name:             "devices",
@@ -466,7 +467,7 @@ func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err 
 		return 0, fmt.Errorf("failed to read logs from pv capacity pod: %w node:%s", err, va.nodeName)
 	}
 
-	pvReport := pvReport{}
+	pvReport := vgReport{}
 	err = json.Unmarshal(logs, &pvReport)
 	if err != nil {
 		return 0, fmt.Errorf("failed to format vgs output: %w node:%s", err, va.nodeName)
