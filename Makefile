@@ -18,14 +18,6 @@ GO111MODULE := on
 KUBECONFIG := $(shell pwd)/.kubeconfig
 HELM_REPO := "https://helm.metal-stack.io"
 
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
-LOCALBIN ?= $(shell pwd)/bin
-GOOS ?= linux
-GOARCH ?= amd64
-GOARM ?=
-CGO_ENABLED ?= 0
-TAGS := -tags 'osusergo netgo static_build'
-
 PLATFORM := $(GOOS)/$(GOARCH)$(if $(GOARM),/v$(GOARM))
 BINARY_LVMPLUGIN := $(PLATFORM)/lvmplugin
 BINARY_PROVISIONER:= $(PLATFORM)/provisioner
