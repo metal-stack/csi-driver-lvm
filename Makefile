@@ -93,7 +93,7 @@ build-provisioner: provisioner
 	docker build -t csi-driver-lvm-provisioner -f cmd/provisioner/Dockerfile .
 
 /dev/loop%:
-	@fallocate --length 2G loop$*.img
+	@fallocate --length 4G loop$*.img
 ifndef GITHUB_ACTIONS
 	@sudo mknod $@ b 7 $*
 endif

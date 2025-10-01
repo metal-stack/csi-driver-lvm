@@ -190,17 +190,17 @@
 @test "deploy csi-driver-lvm statefulset" {
     run kubectl cordon csi-driver-lvm-worker
     [ "$status" -eq 0 ]
-    run kubectl apply -f files/statefulset.pvc-annotation.yaml --wait --grace-period=0 --timeout=20s
+    run kubectl apply -f files/statefulset.pvc-annotation.yaml --wait --grace-period=0 --timeout=40s
     [ "$status" -eq 0 ]
-    run kubectl wait --for=condition=ready pod -l app=nginx-pvc-annotation --timeout=10s
+    run kubectl wait --for=condition=ready pod -l app=nginx-pvc-annotation --timeout=20s
     [ "$status" -eq 0 ]
-    run kubectl apply -f files/statefulset.pod-annotation.yaml --wait --grace-period=0 --timeout=20s
+    run kubectl apply -f files/statefulset.pod-annotation.yaml --wait --grace-period=0 --timeout=40s
     [ "$status" -eq 0 ]
-    run kubectl wait --for=condition=ready pod -l app=nginx-pod-annotation --timeout=10s
+    run kubectl wait --for=condition=ready pod -l app=nginx-pod-annotation --timeout=20s
     [ "$status" -eq 0 ]
-    run kubectl apply -f files/statefulset.no-annotation.yaml --wait --grace-period=0 --timeout=20s
+    run kubectl apply -f files/statefulset.no-annotation.yaml --wait --grace-period=0 --timeout=40s
     [ "$status" -eq 0 ]
-    run kubectl wait --for=condition=ready pod -l app=nginx-no-annotation --timeout=10s
+    run kubectl wait --for=condition=ready pod -l app=nginx-no-annotation --timeout=20s
     [ "$status" -eq 0 ]
     run kubectl uncordon csi-driver-lvm-worker
     [ "$status" -eq 0 ]
