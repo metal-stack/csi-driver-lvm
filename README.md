@@ -12,15 +12,16 @@ This CSI driver is derived from [csi-driver-host-path](https://github.com/kubern
 
 For the special case of block volumes, the filesystem-expansion has to be performed by the app using the block device
 
-## Pod eviction
+## Automatic PVC Deletion on Pod Eviction
 
-In case of pod eviction the pod the pvc doesn't get deleted. Therefore the pod can't start on another node due to node-affinity. With the `csi-driver-lvm-controller` it's able to capture these events and delete the pvc.
+The persistent volumes created by this CSI driver are strictly node-affine to the node on which the pod was scheduled. This is intentional and prevents pods from starting without the LV data, which resides only on the specific node in the Kubernetes cluster. 
 
-Following is needed:
+Consequently, if a pod is evicted (potentially due to cluster autoscaling or updates to the worker node), the pod may become stuck. In certain scenarios, it's acceptable for the pod to start on another node, despite the potential for data loss. The csi-driver-lvm-controller can capture these events and automatically delete the PVC without requiring manual intervention by an operator.
 
-- statefulset with volumeClaimTemplate and reference to `csi-driver-lvm` storageclass
-- pvc needs annotation: `metal-stack.io/csi-driver-lvm.is-eviction-allowed: true`
+To use this functionality, the following is needed:
 
+- This only works on `StatefulSet`s with volumeClaimTemplates and volume references to the `csi-driver-lvm` storage class
+- In addition to that, the `Pod` managed by the `StatefulSet` needs the annotation: `metal-stack.io/csi-driver-lvm.is-eviction-allowed: true`
 ## Installation ##
 
 **Helm charts for installation are located in a separate repository called [helm-charts](https://github.com/metal-stack/helm-charts). If you would like to contribute to the helm chart, please raise an issue or pull request there.**
