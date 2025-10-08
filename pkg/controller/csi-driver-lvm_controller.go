@@ -18,7 +18,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -66,7 +65,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	parseBoolAnn := func(obj metav1.Object) (bool, error) {
+	parseBoolAnn := func(obj client.Object) (bool, error) {
 		ann := obj.GetAnnotations()
 		if v, ok := ann[isEvictionAllowedAnnotation]; ok {
 			b, err := strconv.ParseBool(v)
@@ -79,7 +78,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return false, nil
 	}
 
-	podAllowed, err := parseBoolAnn(&pod.ObjectMeta)
+	podAllowed, err := parseBoolAnn(&pod)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -125,7 +124,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// iterate over volumes of pod
 	// 1. only pvc volumes
 	// 2. test for managed sc of pvc
-	// 3. test if pvc-name is in derivated pvc-names of sts
+	// 3. test if pvc-name is in derived pvc-names of sts
 	// 4. delete pvc only if belongs to sts and annotation is set on pod or pvc
 	for _, volume := range pod.Spec.Volumes {
 		if volume.PersistentVolumeClaim == nil {
@@ -149,7 +148,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			continue
 		}
 
-		pvcAllowed, err := parseBoolAnn(&pvc.ObjectMeta)
+		pvcAllowed, err := parseBoolAnn(&pvc)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
