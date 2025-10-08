@@ -18,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -65,22 +66,29 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	// helper to parse
-	parseBoolAnn := func(ann map[string]string, owner string) (bool, error) {
+	parseBoolAnn := func(obj metav1.Object) (bool, error) {
+		ann := obj.GetAnnotations()
 		if v, ok := ann[isEvictionAllowedAnnotation]; ok {
 			b, err := strconv.ParseBool(v)
 			if err != nil {
-				return false, fmt.Errorf("unable to parse %s annotation value for %q: %w", owner, isEvictionAllowedAnnotation, err)
+				return false, fmt.Errorf("unable to parse %s annotation value for %q: %w",
+					obj.GetName(), isEvictionAllowedAnnotation, err)
 			}
 			return b, nil
 		}
 		return false, nil
 	}
 
-	podAllowed, err := parseBoolAnn(pod.Annotations, "pod")
+	podAllowed, err := parseBoolAnn(&pod.ObjectMeta)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	scList := &storagev1.StorageClassList{}
+	if err := r.List(ctx, scList); err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to fetch storageclasses: %w", err)
+	}
+	scs := scList.Items
 
 	// pvc-names of sts
 	var belongs []string
@@ -104,10 +112,13 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if scName == nil {
 			return false, nil
 		}
-		var sc storagev1.StorageClass
-		if err := r.Get(ctx, types.NamespacedName{Name: *scName}, &sc); err != nil {
-			return false, fmt.Errorf("unable to fetch sc %q: %w", *scName, err)
+		idx := slices.IndexFunc(scs, func(sc storagev1.StorageClass) bool {
+			return sc.Name == *scName
+		})
+		if idx == -1 {
+			return false, fmt.Errorf("unable to find storageclass %s", *scName)
 		}
+		sc := scs[idx]
 		return sc.Provisioner == r.cfg.ProvisionerName, nil
 	}
 
@@ -138,7 +149,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			continue
 		}
 
-		pvcAllowed, err := parseBoolAnn(pvc.Annotations, "pvc")
+		pvcAllowed, err := parseBoolAnn(&pvc.ObjectMeta)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -165,28 +176,13 @@ func (r *CsiDriverLvmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	updatePred := predicate.Funcs{
 		// Only allow updates when pod gets evicted and is referenced by sts
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldObj := e.ObjectOld.(*corev1.Pod)
 			newObj := e.ObjectNew.(*corev1.Pod)
 
-			hasOldObjDisruption := slices.ContainsFunc(oldObj.Status.Conditions, func(cond corev1.PodCondition) bool {
-				return cond.Type == corev1.DisruptionTarget
-			})
 			hasNewObjDisruption := slices.ContainsFunc(newObj.Status.Conditions, func(cond corev1.PodCondition) bool {
 				return cond.Type == corev1.DisruptionTarget
 			})
 
-			for _, cond := range oldObj.Status.Conditions {
-				if cond.Type == corev1.DisruptionTarget {
-					hasOldObjDisruption = true
-				}
-			}
-			for _, cond := range newObj.Status.Conditions {
-				if cond.Type == corev1.DisruptionTarget {
-					hasNewObjDisruption = true
-				}
-			}
-
-			if hasNewObjDisruption && !hasOldObjDisruption {
+			if hasNewObjDisruption {
 				for _, or := range newObj.OwnerReferences {
 					if or.Kind == "StatefulSet" {
 						return true
