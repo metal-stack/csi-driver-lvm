@@ -80,7 +80,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == "Unschedulable"
 	})
 
-	if !(isDisruptionTarget || isUnscheduled) {
+	if !isDisruptionTarget && !isUnscheduled {
 		return ctrl.Result{}, nil
 	}
 
@@ -127,7 +127,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, err
 		}
 
-		if !(podAllowed || pvcAllowed) {
+		if !podAllowed && !pvcAllowed {
 			continue
 		}
 
@@ -158,6 +158,8 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				if !node.Spec.Unschedulable {
 					continue
 				}
+			} else {
+				continue
 			}
 		}
 
