@@ -21,7 +21,8 @@ Consequently, if a pod is evicted (potentially due to cluster autoscaling or upd
 To use this functionality, the following is needed:
 
 - This only works on `StatefulSet`s with volumeClaimTemplates and volume references to the `csi-driver-lvm` storage class
-- In addition to that, the `Pod` managed by the `StatefulSet` needs the annotation: `metal-stack.io/csi-driver-lvm.is-eviction-allowed: true`
+- In addition to that, the `Pod` or `PersistentVolumeClaim` managed by the `StatefulSet` needs the annotation: `metal-stack.io/csi-driver-lvm.is-eviction-allowed: true`
+
 ## Installation ##
 
 **Helm charts for installation are located in a separate repository called [helm-charts](https://github.com/metal-stack/helm-charts). If you would like to contribute to the helm chart, please raise an issue or pull request there.**

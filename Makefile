@@ -9,28 +9,15 @@ BINARY_LVMPLUGIN := $(PLATFORM)/lvmplugin
 BINARY_PROVISIONER:= $(PLATFORM)/provisioner
 BINARY_CONTROLLER:= $(PLATFORM)/controller
 
-SHA := $(shell git rev-parse --short=8 HEAD)
-GITVERSION := $(shell git describe --long --all)
-BUILDDATE := $(shell date --rfc-3339=seconds)
-VERSION := $(or ${VERSION},$(shell git describe --tags --exact-match 2> /dev/null || git symbolic-ref -q --short HEAD || git rev-parse --short HEAD))
-
 GO111MODULE := on
 KUBECONFIG := $(shell pwd)/.kubeconfig
 HELM_REPO := "https://helm.metal-stack.io"
 
-PLATFORM := $(GOOS)/$(GOARCH)$(if $(GOARM),/v$(GOARM))
-BINARY_LVMPLUGIN := $(PLATFORM)/lvmplugin
-BINARY_PROVISIONER:= $(PLATFORM)/provisioner
-BINARY_CONTROLLER:= $(PLATFORM)/controller
-
 SHA := $(shell git rev-parse --short=8 HEAD)
 GITVERSION := $(shell git describe --long --all)
-BUILDDATE := $(shell date --rfc-3339=seconds)
+# gnu date format iso-8601 is parsable with Go RFC3339
+BUILDDATE := $(shell date --iso-8601=seconds)
 VERSION := $(or ${VERSION},$(shell git describe --tags --exact-match 2> /dev/null || git symbolic-ref -q --short HEAD || git rev-parse --short HEAD))
-
-GO111MODULE := on
-KUBECONFIG := $(shell pwd)/.kubeconfig
-HELM_REPO := "https://helm.metal-stack.io"
 
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
 LOCALBIN ?= $(shell pwd)/bin

@@ -64,6 +64,19 @@ func parseBoolAnn(obj client.Object) (bool, error) {
 	return false, nil
 }
 
+func isUnscheduled(conditions []corev1.PodCondition) bool {
+	return slices.ContainsFunc(conditions, func(cond corev1.PodCondition) bool {
+		return cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == "Unschedulable"
+	})
+}
+
+func hasDisruptionCondition(conditions []corev1.PodCondition) bool {
+	return slices.ContainsFunc(conditions, func(cond corev1.PodCondition) bool {
+		return cond.Type == corev1.DisruptionTarget
+	})
+
+}
+
 func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var pod corev1.Pod
 	if err := r.Get(ctx, req.NamespacedName, &pod); err != nil {
@@ -71,16 +84,11 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	//on node drain -> pod gets evicted
-	isDisruptionTarget := slices.ContainsFunc(pod.Status.Conditions, func(cond corev1.PodCondition) bool {
-		return cond.Type == corev1.DisruptionTarget
-	})
-
+	hasDisruptionTarget := hasDisruptionCondition(pod.Status.Conditions)
 	//on missed disruptionTarget
-	isUnscheduled := slices.ContainsFunc(pod.Status.Conditions, func(cond corev1.PodCondition) bool {
-		return cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == "Unschedulable"
-	})
+	isUnscheduled := isUnscheduled(pod.Status.Conditions)
 
-	if !isDisruptionTarget && !isUnscheduled {
+	if !hasDisruptionTarget && !isUnscheduled {
 		return ctrl.Result{}, nil
 	}
 
@@ -182,11 +190,7 @@ func (r *CsiDriverLvmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			// Only allow updates when pod gets evicted and is referenced by sts
 			newObj := e.ObjectNew.(*corev1.Pod)
 
-			hasNewObjDisruption := slices.ContainsFunc(newObj.Status.Conditions, func(cond corev1.PodCondition) bool {
-				return cond.Type == corev1.DisruptionTarget
-			})
-
-			if hasNewObjDisruption {
+			if hasDisruptionCondition(newObj.Status.Conditions) {
 				for _, or := range newObj.OwnerReferences {
 					if or.Kind == "StatefulSet" {
 						return true
@@ -199,11 +203,7 @@ func (r *CsiDriverLvmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			// These events are received on controller start and can be used to find unscheduled pods
 			newObj := e.Object.(*corev1.Pod)
 
-			isUnscheduled := slices.ContainsFunc(newObj.Status.Conditions, func(cond corev1.PodCondition) bool {
-				return cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == "Unschedulable"
-			})
-
-			if isUnscheduled {
+			if isUnscheduled(newObj.Status.Conditions) {
 				for _, or := range newObj.OwnerReferences {
 					if or.Kind == "StatefulSet" {
 						return true
