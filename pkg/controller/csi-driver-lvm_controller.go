@@ -17,7 +17,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
 )
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -52,59 +51,39 @@ func New(client client.Client, scheme *runtime.Scheme, log logr.Logger, cfg Conf
 	}
 }
 
+func parseBoolAnn(obj client.Object) (bool, error) {
+	ann := obj.GetAnnotations()
+	if v, ok := ann[isEvictionAllowedAnnotation]; ok {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return false, fmt.Errorf("unable to parse %s annotation value for %q: %w",
+				obj.GetName(), isEvictionAllowedAnnotation, err)
+		}
+		return b, nil
+	}
+	return false, nil
+}
+
 func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.Log.Info("Starting reconcile...")
 	var pod corev1.Pod
 	if err := r.Get(ctx, req.NamespacedName, &pod); err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to fetch pod %q: %w", req.NamespacedName, err)
 	}
 
-	parseBoolAnn := func(obj client.Object) (bool, error) {
-		ann := obj.GetAnnotations()
-		if v, ok := ann[isEvictionAllowedAnnotation]; ok {
-			b, err := strconv.ParseBool(v)
-			if err != nil {
-				return false, fmt.Errorf("unable to parse %s annotation value for %q: %w",
-					obj.GetName(), isEvictionAllowedAnnotation, err)
-			}
-			return b, nil
-		}
-		return false, nil
-	}
-
-	podAllowed, err := parseBoolAnn(&pod)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	scList := &storagev1.StorageClassList{}
-	if err := r.List(ctx, scList); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to fetch storageclasses: %w", err)
-	}
-	scs := scList.Items
-
-	isDisrupted := slices.ContainsFunc(pod.Status.Conditions, func(cond corev1.PodCondition) bool {
+	//on node drain -> pod gets evicted
+	isDisruptionTarget := slices.ContainsFunc(pod.Status.Conditions, func(cond corev1.PodCondition) bool {
 		return cond.Type == corev1.DisruptionTarget
 	})
-	var node corev1.Node
-	if isDisrupted {
-		if err := r.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName}, &node); err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to fetch node %q: %w", pod.Spec.NodeName, err)
-		}
-		if !node.Spec.Unschedulable {
-			return ctrl.Result{}, nil
-		}
-	}
 
+	//on missed disruptionTarget
 	isUnscheduled := slices.ContainsFunc(pod.Status.Conditions, func(cond corev1.PodCondition) bool {
 		return cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == "Unschedulable"
 	})
 
-	if isUnscheduled {
-		r.Log.Info("test")
+	if !(isDisruptionTarget || isUnscheduled) {
+		return ctrl.Result{}, nil
 	}
 
-	// pvc-names of sts
 	var belongs []string
 	for _, or := range pod.OwnerReferences {
 		if or.Kind != "StatefulSet" {
@@ -119,21 +98,6 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			belongs = append(belongs, pvcName)
 		}
 		break
-	}
-
-	// helper to test provisioner of sc
-	isManagedSC := func(scName *string) (bool, error) {
-		if scName == nil {
-			return false, nil
-		}
-		idx := slices.IndexFunc(scs, func(sc storagev1.StorageClass) bool {
-			return sc.Name == *scName
-		})
-		if idx == -1 {
-			return false, fmt.Errorf("unable to find storageclass %s", *scName)
-		}
-		sc := scs[idx]
-		return sc.Provisioner == r.cfg.ProvisionerName, nil
 	}
 
 	// iterate over volumes of pod
@@ -154,74 +118,62 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			return ctrl.Result{}, fmt.Errorf("unable to fetch pvc %q: %w", volume.PersistentVolumeClaim.ClaimName, err)
 		}
 
-		managed, err := isManagedSC(pvc.Spec.StorageClassName)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		if !managed {
-			continue
-		}
-
-		if isUnscheduled {
-			var pv corev1.PersistentVolume
-			if err := r.Get(ctx, types.NamespacedName{
-				Name: pvc.Spec.VolumeName,
-			}, &pv); err != nil {
-				var nodes []corev1.Node
-				if pv.Spec.NodeAffinity != nil && pv.Spec.NodeAffinity.Required != nil {
-					for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
-						for _, expr := range term.MatchExpressions {
-							if expr.Key == corev1.LabelHostname && len(expr.Values) > 0 {
-								for _, node := range expr.Values {
-									var possibleNode corev1.Node
-									if err := r.Get(ctx, types.NamespacedName{Name: node}, &possibleNode); err != nil {
-										return ctrl.Result{}, fmt.Errorf("unable to fetch node %q: %w", pod.Spec.NodeName, err)
-									}
-									nodes = append(nodes, possibleNode)
-								}
-							}
-						}
-					}
-				}
-
-				if len(nodes) == 0 {
-					r.Log.Info("PV has no nodeAffinity, skipping eviction-based cleanup", "pv", pv.Name)
-					return ctrl.Result{}, nil
-				}
-				containsSchedulableNode := slices.ContainsFunc(nodes, func(n corev1.Node) bool {
-					return !n.Spec.Unschedulable
-				})
-				if containsSchedulableNode {
-					return ctrl.Result{}, nil
-				}
-				node = nodes[0]
-			}
-		}
-
 		pvcAllowed, err := parseBoolAnn(&pvc)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 
-		pvcBelongsToSTS := slices.Contains(belongs, pvc.Name)
-		allowed := pvcBelongsToSTS && (podAllowed || pvcAllowed)
-		if !allowed {
+		podAllowed, err := parseBoolAnn(&pod)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !(podAllowed || pvcAllowed) {
 			continue
+		}
+
+		if !slices.Contains(belongs, pvc.Name) {
+			continue
+		}
+
+		var pv corev1.PersistentVolume
+		if err := r.Get(ctx, types.NamespacedName{
+			Name: pvc.Spec.VolumeName,
+		}, &pv); err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to fetch pv %q: %w", pvc.Spec.VolumeName, err)
+		}
+		if pv.Spec.CSI != nil || pv.Spec.CSI.Driver != r.cfg.ProvisionerName {
+			continue
+		}
+
+		if isUnscheduled {
+			if pv.Spec.NodeAffinity != nil && pv.Spec.NodeAffinity.Required != nil {
+				if len(pv.Spec.NodeAffinity.Required.NodeSelectorTerms) != 1 {
+					return ctrl.Result{}, fmt.Errorf("unexpected node-affinity in pv in csi-driver-lvm managed pv %s", pv.Name)
+				}
+
+				var node corev1.Node
+				if err := r.Get(ctx, types.NamespacedName{Name: pv.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions[0].Values[0]}, &node); err != nil {
+					return ctrl.Result{}, fmt.Errorf("unable to fetch node %q: %w", pod.Spec.NodeName, err)
+				}
+				if !node.Spec.Unschedulable {
+					continue
+				}
+			}
 		}
 
 		r.Log.Info("trying to delete pvc because of eviction",
 			"pvc", pvc.Name, "pod", pod.Name, "namespace", pvc.Namespace,
-			"node", node.Name)
+		)
 
 		if err := r.Delete(ctx, &pvc); err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to delete pvc %q: %w", pvc.Name, err)
 		}
-		r.Log.Info("deleted PVC because of eviction", "pvc", pvc.Name, "pod", pod.Name, "node", node.Name)
+		r.Log.Info("deleted PVC because of eviction", "pvc", pvc.Name, "pod", pod.Name)
 	}
 	return ctrl.Result{}, nil
 }
 
+// Mechanism only works for StatefulSets with volumeClaimTemplates
 func (r *CsiDriverLvmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	updatePred := predicate.Funcs{
 		// Only allow updates when pod gets evicted and is referenced by sts
