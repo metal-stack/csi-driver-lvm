@@ -15,6 +15,7 @@ env:
   REGISTRY: ghcr.io
   PLUGIN_IMAGE_NAME: ${{ github.repository }}
   PROVISIONER_IMAGE_NAME: ${{ github.repository }}-provisioner
+  CONTROLLER_IMAGE_NAME: ${{ github.repository }}-controller
 
 jobs:
   lint:
@@ -82,7 +83,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version-file: "go.mod"
 
       - name: Build
         env:
@@ -90,16 +91,19 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           GOARM: ${{ matrix.arch == 'arm' && '7' || '' }}
         run: |
-          make lvmplugin provisioner
+          make lvmplugin provisioner controller
 
       - uses: actions/upload-artifact@v4
         with:
           name: lvmplugin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-v7' || '' }}
           path: bin
-
       - uses: actions/upload-artifact@v4
         with:
           name: provisioner-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-v7' || '' }}
+          path: bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: controller-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.arch == 'arm' && '-v7' || '' }}
           path: bin
 
   docker-build:
@@ -131,18 +135,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-
       - name: Download plugin binaries
         uses: actions/download-artifact@v4
         with:
           pattern: lvmplugin-*
           path: bin
           merge-multiple: true
-
       - name: Download provisioner binaries
         uses: actions/download-artifact@v4
         with:
           pattern: provisioner-*
+          path: bin
+          merge-multiple: true
+      - name: Download controller binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: controller-*
           path: bin
           merge-multiple: true
 
@@ -166,4 +174,15 @@ jobs:
           sbom: true
           tags: ${{ env.REGISTRY }}/${{ env.PROVISIONER_IMAGE_NAME }}:${{ env.tag }}
           file: cmd/provisioner/Dockerfile
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+
+      - name: Build and push controller image
+        if: ${{ env.DOCKER_REGISTRY_TOKEN != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          sbom: true
+          tags: ${{ env.REGISTRY }}/${{ env.CONTROLLER_IMAGE_NAME }}:${{ env.tag }}
+          file: cmd/controller/Dockerfile
           platforms: linux/amd64,linux/arm64,linux/arm/v7

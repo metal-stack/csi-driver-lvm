@@ -4,10 +4,18 @@ kind: Cluster
 nodes:
   - role: control-plane
     extraMounts:
-      - hostPath: /dev/loop100
-        containerPath: /dev/loop100
+      - hostPath: config
+        containerPath: /etc/config
+  - role: worker
+    extraMounts:
       - hostPath: /dev/loop101
         containerPath: /dev/loop101
+      - hostPath: config
+        containerPath: /etc/config
+  - role: worker
+    extraMounts:
+      - hostPath: /dev/loop100
+        containerPath: /dev/loop100
       - hostPath: config
         containerPath: /etc/config
 
