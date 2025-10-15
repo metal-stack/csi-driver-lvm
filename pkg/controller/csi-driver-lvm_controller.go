@@ -84,7 +84,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	var belongs []string
+	belongs := map[string]bool{}
 	for _, or := range pod.OwnerReferences {
 		if or.Kind != "StatefulSet" {
 			continue
@@ -95,9 +95,8 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		for _, ct := range sts.Spec.VolumeClaimTemplates {
 			pvcName := ct.Name + "-" + pod.Name
-			belongs = append(belongs, pvcName)
+			belongs[pvcName] = true
 		}
-		break
 	}
 
 	// iterate over volumes of pod
@@ -127,11 +126,12 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err != nil {
 			return ctrl.Result{}, err
 		}
+
 		if !(podAllowed || pvcAllowed) {
 			continue
 		}
 
-		if !slices.Contains(belongs, pvc.Name) {
+		if _, ok := belongs[pvc.Name]; !ok {
 			continue
 		}
 
@@ -141,7 +141,7 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}, &pv); err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to fetch pv %q: %w", pvc.Spec.VolumeName, err)
 		}
-		if pv.Spec.CSI != nil || pv.Spec.CSI.Driver != r.cfg.ProvisionerName {
+		if pv.Spec.CSI == nil || pv.Spec.CSI.Driver != r.cfg.ProvisionerName {
 			continue
 		}
 
@@ -176,8 +176,8 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 // Mechanism only works for StatefulSets with volumeClaimTemplates
 func (r *CsiDriverLvmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	updatePred := predicate.Funcs{
-		// Only allow updates when pod gets evicted and is referenced by sts
 		UpdateFunc: func(e event.UpdateEvent) bool {
+			// Only allow updates when pod gets evicted and is referenced by sts
 			newObj := e.ObjectNew.(*corev1.Pod)
 
 			hasNewObjDisruption := slices.ContainsFunc(newObj.Status.Conditions, func(cond corev1.PodCondition) bool {
@@ -194,7 +194,7 @@ func (r *CsiDriverLvmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return false
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
-			r.Log.Info("Create of POD!")
+			// These events are received on controller start and can be used to find unscheduled pods
 			newObj := e.Object.(*corev1.Pod)
 
 			isUnscheduled := slices.ContainsFunc(newObj.Status.Conditions, func(cond corev1.PodCondition) bool {
