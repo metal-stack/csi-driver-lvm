@@ -74,7 +74,7 @@ type volumeAction struct {
 	devicesPattern   string
 	provisionerImage string
 	pullPolicy       v1.PullPolicy
-	kubeClient       kubernetes.Clientset
+	kubeClient       kubernetes.Interface
 	namespace        string
 	vgName           string
 	hostWritePath    string

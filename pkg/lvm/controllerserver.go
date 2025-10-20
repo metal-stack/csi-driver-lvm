@@ -38,7 +38,7 @@ type controllerServer struct {
 	devicesPattern   string
 	vgName           string
 	hostWritePath    string
-	kubeClient       kubernetes.Clientset
+	kubeClient       kubernetes.Interface
 	provisionerImage string
 	pullPolicy       v1.PullPolicy
 	namespace        string
@@ -73,7 +73,7 @@ func newControllerServer(ephemeral bool, nodeID string, devicesPattern string, v
 		devicesPattern:   devicesPattern,
 		hostWritePath:    hostWritePath,
 		vgName:           vgName,
-		kubeClient:       *kubeClient,
+		kubeClient:       kubeClient,
 		namespace:        namespace,
 		provisionerImage: provisionerImage,
 		pullPolicy:       pullPolicy,
@@ -181,7 +181,10 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 	volID := req.GetVolumeId()
 
 	volume, err := cs.kubeClient.CoreV1().PersistentVolumes().Get(ctx, volID, metav1.GetOptions{})
-	if err != nil {
+	if k8serror.IsNotFound(err) {
+		klog.V(3).Infof("volume %s not found. Assuming volume it is gone for good.", volID)
+		return &csi.DeleteVolumeResponse{}, nil
+	} else if err != nil {
 		return nil, err
 	}
 	klog.V(4).Infof("volume %s to be deleted", volume)
