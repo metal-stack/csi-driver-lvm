@@ -412,21 +412,23 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 	retrySeconds := 60
 	for range retrySeconds {
 		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, provisionerPod.Name, metav1.GetOptions{})
-		if pod.Status.Phase == v1.PodFailed {
-			// pod terminated in time, but with failure
-			// return ResourceExhausted so the requesting pod can be rescheduled to another node
-			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
-			klog.Info("provisioner pod terminated with failure")
-			return status.Error(codes.ResourceExhausted, "volume creation failed")
-		}
 		if err != nil {
 			klog.Errorf("error reading provisioner pod:%v", err)
-		} else if pod.Status.Phase == v1.PodSucceeded {
-			klog.Info("provisioner pod terminated successfully")
-			completed = true
-			break
+		} else {
+			klog.Infof("provisioner pod status:%s", pod.Status.Phase)
+			if pod.Status.Phase == v1.PodFailed {
+				// pod terminated in time, but with failure
+				// return ResourceExhausted so the requesting pod can be rescheduled to another node
+				// see https://github.com/kubernetes-csi/external-provisioner/pull/405
+				klog.Info("provisioner pod terminated with failure")
+				return status.Error(codes.ResourceExhausted, "volume creation failed")
+			} else if pod.Status.Phase == v1.PodSucceeded {
+				klog.Info("provisioner pod terminated successfully")
+				completed = true
+				break
+			}
 		}
-		klog.Infof("provisioner pod status:%s", pod.Status.Phase)
+
 		time.Sleep(1 * time.Second)
 	}
 	if !completed {
@@ -610,7 +612,9 @@ func extendLVS(vg string, name string, size uint64, isBlock bool) (string, error
 
 // RemoveLVS executes lvremove
 func RemoveLVS(vg string, name string) (string, error) {
-
+	if !vgExists(vg) {
+		return fmt.Sprintf("volumegroup %s does not exist. Assuming it has already been deleted.", vg), nil
+	}
 	if !lvExists(vg, name) {
 		return fmt.Sprintf("logical volume %s does not exist. Assuming it has already been deleted.", name), nil
 	}

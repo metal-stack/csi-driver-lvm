@@ -48,6 +48,17 @@ func Test_deleteVolume(t *testing.T) {
 			wantResponse:                 nil,
 			wantErr:                      true,
 		},
+		{
+			name:         "delete volume with non-existent vg",
+			volID:        "vol-nonexist-vg",
+			volumeExists: true,
+			// Note: this test case is not validating inner behavior of provisionerPod.
+			// Intstead, it is simply expecting the provisioner pod status to be Succeeded when VG does not exist.
+			// The actual test should be done in lvm.go tests.
+			expectedProvisionerPodStatus: v1.PodSucceeded,
+			wantResponse:                 &csi.DeleteVolumeResponse{},
+			wantErr:                      false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -57,14 +68,8 @@ func Test_deleteVolume(t *testing.T) {
 					[]csi.ControllerServiceCapability_RPC_Type{
 						csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 					}),
-				nodeID:           "node-123",
-				devicesPattern:   "pattern-123",
-				vgName:           "vg-123",
-				hostWritePath:    "host-123",
-				namespace:        "namespace-123",
-				provisionerImage: "image-123",
-				pullPolicy:       v1.PullAlways,
-				kubeClient:       fake.NewSimpleClientset(),
+				nodeID:     "node-123",
+				kubeClient: fake.NewSimpleClientset(),
 			}
 
 			// mock volume creation
@@ -99,7 +104,7 @@ func Test_deleteVolume(t *testing.T) {
 					},
 				}, metav1.CreateOptions{})
 			}
-			// only if mockProvisionerPod is true, we need to mock the provisioner pod
+
 			if tt.expectedProvisionerPodStatus != "" {
 				podStatusUpdated := make(chan struct{})
 				go func() {
