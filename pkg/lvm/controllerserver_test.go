@@ -75,14 +75,18 @@ func Test_deleteVolume(t *testing.T) {
 			// mock volume creation
 			if tt.volumeExists {
 				// Create a mock node first
-				cs.kubeClient.CoreV1().Nodes().Create(context.Background(), &v1.Node{
+				_, err := cs.kubeClient.CoreV1().Nodes().Create(context.Background(), &v1.Node{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-node",
 					},
 				}, metav1.CreateOptions{})
+				if err != nil {
+					t.Errorf("CreateNode() error = %v", err)
+					return
+				}
 
 				// Create the PersistentVolume with proper node affinity
-				cs.kubeClient.CoreV1().PersistentVolumes().Create(context.Background(), &v1.PersistentVolume{
+				_, err = cs.kubeClient.CoreV1().PersistentVolumes().Create(context.Background(), &v1.PersistentVolume{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: tt.volID,
 					},
@@ -103,6 +107,10 @@ func Test_deleteVolume(t *testing.T) {
 						},
 					},
 				}, metav1.CreateOptions{})
+				if err != nil {
+					t.Errorf("CreatePersistentVolume() error = %v", err)
+					return
+				}
 			}
 
 			if tt.expectedProvisionerPodStatus != "" {
@@ -124,7 +132,11 @@ func Test_deleteVolume(t *testing.T) {
 							// Update the pod status to the test target
 							pod.Status.Phase = tt.expectedProvisionerPodStatus
 							klog.Infof("pod %s status updated to Succeeded", pod.Name)
-							cs.kubeClient.CoreV1().Pods(cs.namespace).Update(context.Background(), pod, metav1.UpdateOptions{})
+							_, err = cs.kubeClient.CoreV1().Pods(cs.namespace).Update(context.Background(), pod, metav1.UpdateOptions{})
+							if err != nil {
+								t.Errorf("UpdatePod() error = %v", err)
+								return
+							}
 							break
 						}
 					}
