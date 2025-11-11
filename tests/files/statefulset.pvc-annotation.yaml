@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nginx-pvc-annotation
+  labels:
+    app: nginx-pvc-annotation
+spec:
+  serviceName: "nginx-pvc-annotation" 
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-pvc-annotation
+  template:
+    metadata:
+      labels:
+        app: nginx-pvc-annotation
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.14.2
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - mountPath: "/data"
+          name: my-csi-volume
+  volumeClaimTemplates:
+  - metadata:
+      name: my-csi-volume
+      annotations:
+        metal-stack.io/csi-driver-lvm.is-eviction-allowed: "true"
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 1Gi
+      storageClassName: csi-driver-lvm-linear
+
