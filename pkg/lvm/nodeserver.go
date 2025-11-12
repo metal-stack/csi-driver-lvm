@@ -54,6 +54,14 @@ func newNodeServer(nodeID string, ephemeral bool, maxVolumesPerNode int64, devic
 		klog.Infof("volumegroup: %s not found\n", vgName)
 		vgActivate()
 		// now check again for existing vg again
+		vgexists := vgExists(vgName)
+		if !vgexists {
+			klog.Infof("volumegroup: %s does not exist - creating...\n", vgName)
+			_, err := CreateVG(vgName, devicesPattern)
+			if err != nil {
+				klog.Infof("unable to create initial volume group:%s %v", vgName, err)
+			}
+		}
 	}
 	cmd := exec.Command("lvchange", "-ay", vgName)
 	out, err := cmd.CombinedOutput()
