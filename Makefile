@@ -11,7 +11,7 @@ BINARY_CONTROLLER:= $(PLATFORM)/controller
 
 GO111MODULE := on
 KUBECONFIG := $(shell pwd)/.kubeconfig
-HELM_REPO := "https://helm.metal-stack.io"
+HELM_REPO := "https://helm.metal-stack.io/pull_requests/add-capacity-tracking"
 
 SHA := $(shell git rev-parse --short=8 HEAD)
 GITVERSION := $(shell git describe --long --all)

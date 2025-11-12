@@ -6,6 +6,35 @@
     [ "$status" -eq 0 ]
 }
 
+# 6 CSIStorageCapacity objects = 2 worker nodes * 3 storage classes
+@test "wait for 6 CSIStorageCapacity objects" {
+    end=$((SECONDS+60))
+    while [ $SECONDS -lt $end ]; do
+        count=$(kubectl get csistoragecapacities \
+            -n csi-driver-lvm \
+            --no-headers 2>/dev/null | wc -l)
+        if [ "$count" -ge 6 ]; then
+            break
+        fi
+        sleep 2
+    done
+
+    [ "$count" -ge 6 ]
+}
+
+@test "record CSIStorageCapacity before pod creation" {
+    export CAP_BEFORE=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+        | jq -r '
+            .items[]
+            | select(.storageClassName == "csi-driver-lvm-linear")
+            | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+            | .capacity
+            | sub("Mi$"; "") 
+        ')
+    [ -n "$CAP_BEFORE" ]
+    echo "$CAP_BEFORE" > /tmp/cap_before.txt
+}
+
 @test "deploy inline pod with ephemeral volume" {
     run kubectl apply -f files/pod.inline.vol.yaml --wait --timeout=20s
     [ "$status" -eq 0 ]
@@ -16,9 +45,63 @@
     [ "$status" -eq 0 ]
 }
 
+@test "record CSIStorageCapacity after pod creation (wait until changed)" {
+    end=$((SECONDS+60))
+    CAP_AFTER=""
+    CAP_BEFORE=$(cat /tmp/cap_before.txt)
+
+    while [ $SECONDS -lt $end ]; do
+        CAP_AFTER=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+            | jq -r '
+                .items[]
+                | select(.storageClassName == "csi-driver-lvm-linear")
+                | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+                | .capacity
+                | sub("Mi$"; "") 
+            ')
+
+        if [ "$CAP_AFTER" != "$CAP_BEFORE" ] && [ -n "$CAP_AFTER" ]; then
+            echo "Capacity changed from $CAP_BEFORE to $CAP_AFTER"
+            break
+        fi
+        sleep 2
+    done
+
+    DIFF=$(( CAP_BEFORE - CAP_AFTER ))
+
+    [ "$DIFF" -eq 100 ]
+}
+
 @test "delete inline linear pod" {
     run kubectl delete -f files/pod.inline.vol.yaml --grace-period=0 --wait --timeout=20s
     [ "$status" -eq 0 ]
+}
+
+@test "record CSIStorageCapacity after pod deletion (wait until changed)" {
+    end=$((SECONDS+60))
+    CAP_AFTER=""
+    CAP_START=$(cat /tmp/cap_before.txt)
+
+    while [ $SECONDS -lt $end ]; do
+        CAP_AFTER=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+            | jq -r '
+                .items[]
+                | select(.storageClassName == "csi-driver-lvm-linear")
+                | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+                | .capacity
+                | sub("Mi$"; "") 
+            ')
+        
+        if [ "$CAP_AFTER" == "$CAP_START" ] && [ -n "$CAP_AFTER" ]; then
+            echo "Capacity changed to $CAP_START"
+            break
+        fi
+        sleep 2
+    done
+
+    DIFF=$(( CAP_START - CAP_AFTER ))
+
+    [ "$DIFF" -eq 0 ]
 }
 
 @test "create pvc linear" {
