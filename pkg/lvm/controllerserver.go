@@ -307,9 +307,10 @@ func (cs *controllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacit
 	}
 
 	va := volumeAction{
-		action:   "capacity",
-		name:     fmt.Sprintf("%s-%s", nodeName, lvmType),
-		nodeName: nodeName, lvmType: lvmType,
+		action:           "capacity",
+		name:             fmt.Sprintf("%s-%s", nodeName, lvmType),
+		nodeName:         nodeName,
+		lvmType:          lvmType,
 		pullPolicy:       cs.pullPolicy,
 		provisionerImage: cs.provisionerImage,
 		kubeClient:       cs.kubeClient,

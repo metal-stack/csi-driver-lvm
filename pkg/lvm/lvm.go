@@ -33,10 +33,14 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	k8serror "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/tools/cache"
+	watchtools "k8s.io/client-go/tools/watch"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 
 	"k8s.io/klog/v2"
 )
@@ -93,7 +97,6 @@ type vgReport struct {
 }
 
 func (p *vgReport) totalFree(vgName string) (int64, error) {
-	totalFree := int64(0)
 	for _, report := range p.Report {
 		for _, vg := range report.VG {
 			if vg.VGName != vgName {
@@ -103,10 +106,10 @@ func (p *vgReport) totalFree(vgName string) (int64, error) {
 			if err != nil {
 				return 0, fmt.Errorf("failed to parse free space for device %s with error: %w", vg.VGName, err)
 			}
-			totalFree = free
+			return free, nil
 		}
 	}
-	return totalFree, nil
+	return 0, fmt.Errorf("failed to find the free space for device %s", vgName)
 }
 
 const (
@@ -430,38 +433,45 @@ func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err 
 			klog.Errorf("unable to delete the capacity pod: %v", e)
 		}
 	}()
-	completed := false
-	retrySeconds := 60
-	podLogRequest := &rest.Request{}
-	for range retrySeconds {
-		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, capacityPod.Name, metav1.GetOptions{})
-		if pod.Status.Phase == v1.PodFailed {
-			// pod terminated in time, but with failure
-			// return ResourceExhausted so the requesting pod can be rescheduled to another node
-			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
-			klog.Info("capacity pod terminated with failure")
-			return 0, status.Error(codes.ResourceExhausted, "capacity pod failed")
-		}
-		if err != nil {
-			klog.Errorf("error reading capacity pod:%v", err)
-		} else if pod.Status.Phase == v1.PodSucceeded {
-			klog.Info("capacitypod terminated successfully")
-			podLogRequest = va.kubeClient.CoreV1().Pods(va.namespace).GetLogs(capacityPod.Name, &v1.PodLogOptions{})
-			completed = true
-			break
-		}
-		klog.Infof("capacity pod status:%s", pod.Status.Phase)
-		time.Sleep(1 * time.Second)
-	}
-	if !completed {
-		return 0, fmt.Errorf("create process timeout after %v seconds", retrySeconds)
+
+	_, err = watchtools.UntilWithSync(
+		ctx,
+		&cache.ListWatch{
+			ListWithContextFunc: func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+				opts.FieldSelector = fmt.Sprintf("metadata.name=%s", capacityPod.Name)
+				return va.kubeClient.CoreV1().Pods(va.namespace).List(ctx, opts)
+			},
+			WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
+				opts.FieldSelector = fmt.Sprintf("metadata.name=%s", capacityPod.Name)
+				return va.kubeClient.CoreV1().Pods(va.namespace).Watch(ctx, opts)
+			},
+		},
+		&v1.Pod{},
+		nil,
+		func(event watch.Event) (bool, error) {
+			pod := event.Object.(*v1.Pod)
+			switch pod.Status.Phase {
+			case v1.PodFailed:
+				return false, fmt.Errorf("capacity pod %s failed", capacityPod.Name)
+			case v1.PodSucceeded:
+				klog.Info("capacity pod terminated successfully")
+				return true, nil
+			default:
+				klog.Infof("capacity pod status: %s", pod.Status.Phase)
+				return false, nil
+			}
+		},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("error while waiting for capacity pod: %w", err)
 	}
 
-	podLogRequest.Do(ctx)
+	podLogRequest := va.kubeClient.CoreV1().Pods(va.namespace).GetLogs(capacityPod.Name, &v1.PodLogOptions{})
 	resp := podLogRequest.Do(ctx)
 	if resp.Error() != nil {
 		return 0, fmt.Errorf("failed to get logs from pv capacity pod: %w node:%s", resp.Error(), va.nodeName)
 	}
+
 	logs, err := resp.Raw()
 	if err != nil {
 		return 0, fmt.Errorf("failed to read logs from pv capacity pod: %w node:%s", err, va.nodeName)
