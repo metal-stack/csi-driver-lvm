@@ -11,3 +11,6 @@ provisionerImage:
 
 lvm:
   devicePattern: /dev/loop100,/dev/loop101
+
+capacityTracking:
+  pollInterval: 15s
