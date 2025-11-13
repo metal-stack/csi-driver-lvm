@@ -16,7 +16,6 @@ import (
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	nodeName := req.GetAccessibilityRequirements().GetPreferred()[0].GetSegments()[topologyKeyNode]
 	if !d.isRequestForThisNode(nodeName) {
-		//skip gracefully?
 		return &csi.CreateVolumeResponse{}, nil
 	}
 
