@@ -1,8 +1,0 @@
-FROM alpine:3.22
-ARG TARGETPLATFORM
-LABEL maintainer="metal-stack authors <info@metal-stack.io>"
-
-RUN apk add lvm2 lvm2-extra e2fsprogs e2fsprogs-extra xfsprogs-extra smartmontools nvme-cli util-linux device-mapper
-COPY --chmod=755 bin/${TARGETPLATFORM}/provisioner /csi-lvmplugin-provisioner
-USER root
-ENTRYPOINT ["/csi-lvmplugin-provisioner"]

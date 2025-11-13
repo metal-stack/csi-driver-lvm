@@ -1,23 +1,6 @@
-/*
-Copyright 2017 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package lvm
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,66 +9,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	v1 "k8s.io/api/core/v1"
-	k8serror "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/tools/cache"
-	watchtools "k8s.io/client-go/tools/watch"
-
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 
 	"k8s.io/klog/v2"
 )
-
-// Lvm contains the main parameters
-type Lvm struct {
-	name              string
-	nodeID            string
-	version           string
-	endpoint          string
-	hostWritePath     string
-	ephemeral         bool
-	maxVolumesPerNode int64
-	devicesPattern    string
-	vgName            string
-	provisionerImage  string
-	pullPolicy        v1.PullPolicy
-	namespace         string
-
-	ids *identityServer
-	ns  *nodeServer
-	cs  *controllerServer
-}
-
-var (
-	vendorVersion = "dev"
-)
-
-type actionType string
-
-type volumeAction struct {
-	action           actionType
-	name             string
-	nodeName         string
-	size             int64
-	lvmType          string
-	devicesPattern   string
-	provisionerImage string
-	pullPolicy       v1.PullPolicy
-	kubeClient       kubernetes.Clientset
-	namespace        string
-	vgName           string
-	hostWritePath    string
-	integrity        bool
-}
 
 type vgReport struct {
 	Report []struct {
@@ -96,8 +22,35 @@ type vgReport struct {
 	} `json:"report"`
 }
 
-func (p *vgReport) totalFree(vgName string) (int64, error) {
-	for _, report := range p.Report {
+const (
+	linearType         = "linear"
+	stripedType        = "striped"
+	mirrorType         = "mirror"
+	fsTypeRegexpString = `TYPE="(\w+)"`
+)
+
+var (
+	fsTypeRegexp = regexp.MustCompile(fsTypeRegexpString)
+)
+
+func VgStats(vgName string) (int64, error) {
+	args := []string{vgName, "--units", "B", "--nosuffix", "--reportformat", "json"}
+	klog.Infof("gettings stats of vg.%s %s", vgName, strings.Join(args, " "))
+
+	cmd := exec.Command("vgs", args...) //nolint:gosec
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("unable to get vg stats of %s: %w", vgName, err)
+	}
+
+	pvReport := vgReport{}
+	err = json.Unmarshal(out, &pvReport)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to format vgs output: %w", err)
+	}
+
+	for _, report := range pvReport.Report {
 		for _, vg := range report.VG {
 			if vg.VGName != vgName {
 				continue
@@ -112,82 +65,7 @@ func (p *vgReport) totalFree(vgName string) (int64, error) {
 	return 0, fmt.Errorf("failed to find the free space for device %s", vgName)
 }
 
-const (
-	linearType  = "linear"
-	stripedType = "striped"
-	mirrorType  = "mirror"
-
-	actionTypeCreate   = "create"
-	actionTypeDelete   = "delete"
-	actionTypeCapacity = "capacity"
-
-	pullIfNotPresent   = "ifnotpresent"
-	fsTypeRegexpString = `TYPE="(\w+)"`
-)
-
-var (
-	fsTypeRegexp = regexp.MustCompile(fsTypeRegexpString)
-)
-
-// NewLvmDriver creates the driver
-func NewLvmDriver(driverName, nodeID, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, namespace string, provisionerImage string, pullPolicy string) (*Lvm, error) {
-	if driverName == "" {
-		return nil, fmt.Errorf("no driver name provided")
-	}
-
-	if nodeID == "" {
-		return nil, fmt.Errorf("no node id provided")
-	}
-
-	if endpoint == "" {
-		return nil, fmt.Errorf("no driver endpoint provided")
-	}
-	if version != "" {
-		vendorVersion = version
-	}
-
-	pp := v1.PullAlways
-	if strings.ToLower(pullPolicy) == pullIfNotPresent {
-		klog.Info("pullpolicy: IfNotPresent")
-		pp = v1.PullIfNotPresent
-	}
-
-	klog.Infof("Driver: %v ", driverName)
-	klog.Infof("Version: %s", vendorVersion)
-
-	return &Lvm{
-		name:              driverName,
-		version:           vendorVersion,
-		nodeID:            nodeID,
-		endpoint:          endpoint,
-		hostWritePath:     hostWritePath,
-		ephemeral:         ephemeral,
-		maxVolumesPerNode: maxVolumesPerNode,
-		devicesPattern:    devicesPattern,
-		vgName:            vgName,
-		namespace:         namespace,
-		provisionerImage:  provisionerImage,
-		pullPolicy:        pp,
-	}, nil
-}
-
-// Run starts the lvm plugin
-func (lvm *Lvm) Run() error {
-	var err error
-	// Create GRPC servers
-	lvm.ids = newIdentityServer(lvm.name, lvm.version)
-	lvm.ns = newNodeServer(lvm.nodeID, lvm.ephemeral, lvm.maxVolumesPerNode, lvm.devicesPattern, lvm.vgName)
-	lvm.cs, err = newControllerServer(lvm.ephemeral, lvm.nodeID, lvm.devicesPattern, lvm.vgName, lvm.hostWritePath, lvm.namespace, lvm.provisionerImage, lvm.pullPolicy)
-	if err != nil {
-		return err
-	}
-	s := newNonBlockingGRPCServer()
-	s.start(lvm.endpoint, lvm.ids, lvm.cs, lvm.ns)
-	s.wait()
-	return nil
-}
-
-func mountLV(lvname, mountPath string, vgName string, fsType string) (string, error) {
+func MountLV(lvname, mountPath string, vgName string, fsType string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 
 	formatted := false
@@ -253,7 +131,7 @@ func mountLV(lvname, mountPath string, vgName string, fsType string) (string, er
 	return "", nil
 }
 
-func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
+func BindMountLV(lvname, mountPath string, vgName string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 	_, err := os.Create(mountPath)
 	if err != nil {
@@ -280,406 +158,12 @@ func bindMountLV(lvname, mountPath string, vgName string) (string, error) {
 	return "", nil
 }
 
-func umountLV(targetPath string) {
+func UmountLV(targetPath string) {
 	cmd := exec.Command("umount", "--lazy", "--force", targetPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		klog.Errorf("unable to umount %s output:%s err:%v", targetPath, string(out), err)
 	}
-}
-
-func createCapacityPod(ctx context.Context, va volumeAction) (result int64, err error) {
-	if va.name == "" || va.nodeName == "" {
-		return 0, fmt.Errorf("invalid empty name or path or node")
-	}
-	if va.action != actionTypeCapacity {
-		return 0, fmt.Errorf("unallowed action for capacityPod")
-	}
-
-	// args need to be one string for sh command -> shell needed for globbing (expansion)
-	// args := fmt.Sprintf(
-	// 	"vgs %s --units B --nosuffix --reportformat json 2>&1",
-	// 	va.vgName,
-	// )
-	args := []string{va.vgName, "--units", "B", "--nosuffix", "--reportformat", "json"}
-
-	klog.Infof("start capacityPod with args: %s", args)
-	hostPathType := v1.HostPathDirectoryOrCreate
-	privileged := true
-	mountPropagationBidirectional := v1.MountPropagationBidirectional
-	capacityPod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: string(va.action) + "-" + va.name,
-		},
-		Spec: v1.PodSpec{
-			RestartPolicy: v1.RestartPolicyNever,
-			NodeName:      va.nodeName,
-			Tolerations: []v1.Toleration{
-				{
-					Operator: v1.TolerationOpExists,
-				},
-			},
-			Containers: []v1.Container{
-				{
-					Name:    "csi-lvmplugin-" + string(va.action),
-					Image:   va.provisionerImage,
-					Command: []string{"vgs"},
-					Args:    args,
-					VolumeMounts: []v1.VolumeMount{
-						{
-							Name:             "devices",
-							ReadOnly:         false,
-							MountPath:        "/dev",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:      "modules",
-							ReadOnly:  false,
-							MountPath: "/lib/modules",
-						},
-						{
-							Name:             "lvmbackup",
-							ReadOnly:         false,
-							MountPath:        "/etc/lvm/backup",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:             "lvmcache",
-							ReadOnly:         false,
-							MountPath:        "/etc/lvm/cache",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:             "lvmlock",
-							ReadOnly:         false,
-							MountPath:        "/run/lock/lvm",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-					},
-					TerminationMessagePath: "/termination.log",
-					ImagePullPolicy:        va.pullPolicy,
-					SecurityContext: &v1.SecurityContext{
-						Privileged: &privileged,
-					},
-					Resources: v1.ResourceRequirements{
-						Requests: v1.ResourceList{
-							"cpu":    resource.MustParse("50m"),
-							"memory": resource.MustParse("50Mi"),
-						},
-						Limits: v1.ResourceList{
-							"cpu":    resource.MustParse("100m"),
-							"memory": resource.MustParse("100Mi"),
-						},
-					},
-				},
-			},
-			Volumes: []v1.Volume{
-				{
-					Name: "devices",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: "/dev",
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "modules",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: "/lib/modules",
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmbackup",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "backup"),
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmcache",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "cache"),
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmlock",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "lock"),
-							Type: &hostPathType,
-						},
-					},
-				},
-			},
-		},
-	}
-	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(ctx, capacityPod, metav1.CreateOptions{})
-	if err != nil && !k8serror.IsAlreadyExists(err) {
-		return 0, err
-	}
-
-	defer func() {
-		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(ctx, capacityPod.Name, metav1.DeleteOptions{})
-		if e != nil {
-			klog.Errorf("unable to delete the capacity pod: %v", e)
-		}
-	}()
-
-	_, err = watchtools.UntilWithSync(
-		ctx,
-		&cache.ListWatch{
-			ListWithContextFunc: func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
-				opts.FieldSelector = fmt.Sprintf("metadata.name=%s", capacityPod.Name)
-				return va.kubeClient.CoreV1().Pods(va.namespace).List(ctx, opts)
-			},
-			WatchFuncWithContext: func(ctx context.Context, opts metav1.ListOptions) (watch.Interface, error) {
-				opts.FieldSelector = fmt.Sprintf("metadata.name=%s", capacityPod.Name)
-				return va.kubeClient.CoreV1().Pods(va.namespace).Watch(ctx, opts)
-			},
-		},
-		&v1.Pod{},
-		nil,
-		func(event watch.Event) (bool, error) {
-			pod := event.Object.(*v1.Pod)
-			switch pod.Status.Phase {
-			case v1.PodFailed:
-				return false, fmt.Errorf("capacity pod %s failed", capacityPod.Name)
-			case v1.PodSucceeded:
-				klog.Info("capacity pod terminated successfully")
-				return true, nil
-			default:
-				klog.Infof("capacity pod status: %s", pod.Status.Phase)
-				return false, nil
-			}
-		},
-	)
-	if err != nil {
-		return 0, fmt.Errorf("error while waiting for capacity pod: %w", err)
-	}
-
-	podLogRequest := va.kubeClient.CoreV1().Pods(va.namespace).GetLogs(capacityPod.Name, &v1.PodLogOptions{})
-	resp := podLogRequest.Do(ctx)
-	if resp.Error() != nil {
-		return 0, fmt.Errorf("failed to get logs from pv capacity pod: %w node:%s", resp.Error(), va.nodeName)
-	}
-
-	logs, err := resp.Raw()
-	if err != nil {
-		return 0, fmt.Errorf("failed to read logs from pv capacity pod: %w node:%s", err, va.nodeName)
-	}
-
-	pvReport := vgReport{}
-	err = json.Unmarshal(logs, &pvReport)
-	if err != nil {
-		return 0, fmt.Errorf("failed to format vgs output: %w node:%s", err, va.nodeName)
-	}
-	totalBytes, err := pvReport.totalFree(va.vgName)
-	if err != nil {
-		return 0, fmt.Errorf("%w node:%s", err, va.nodeName)
-	}
-
-	lvmTypeBytes := int64(0)
-	switch va.lvmType {
-	case linearType, stripedType:
-		lvmTypeBytes = totalBytes
-	case mirrorType:
-		lvmTypeBytes = totalBytes / 2
-	}
-
-	klog.Infof("vgs output for remaining pv capacity: %d bytes node:%s", lvmTypeBytes, va.nodeName)
-	return lvmTypeBytes, nil
-}
-
-func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
-	if va.name == "" || va.nodeName == "" {
-		return fmt.Errorf("invalid empty name or path or node")
-	}
-	if va.action == actionTypeCreate && va.lvmType == "" {
-		return fmt.Errorf("createlv without lvm type")
-	}
-
-	args := []string{}
-	if va.action == actionTypeCreate {
-		args = append(args, "createlv", "--lvsize", fmt.Sprintf("%d", va.size), "--devices", va.devicesPattern, "--lvmtype", va.lvmType)
-		if va.integrity {
-			args = append(args, "--integrity")
-		}
-	}
-	if va.action == actionTypeDelete {
-		args = append(args, "deletelv")
-	}
-	args = append(args, "--lvname", va.name, "--vgname", va.vgName)
-
-	klog.Infof("start provisionerPod with args:%s", args)
-	hostPathType := v1.HostPathDirectoryOrCreate
-	privileged := true
-	mountPropagationBidirectional := v1.MountPropagationBidirectional
-	provisionerPod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: string(va.action) + "-" + va.name,
-		},
-		Spec: v1.PodSpec{
-			RestartPolicy: v1.RestartPolicyNever,
-			NodeName:      va.nodeName,
-			Tolerations: []v1.Toleration{
-				{
-					Operator: v1.TolerationOpExists,
-				},
-			},
-			Containers: []v1.Container{
-				{
-					Name:    "csi-lvmplugin-" + string(va.action),
-					Image:   va.provisionerImage,
-					Command: []string{"/csi-lvmplugin-provisioner"},
-					Args:    args,
-					VolumeMounts: []v1.VolumeMount{
-						{
-							Name:             "devices",
-							ReadOnly:         false,
-							MountPath:        "/dev",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:      "modules",
-							ReadOnly:  false,
-							MountPath: "/lib/modules",
-						},
-						{
-							Name:             "lvmbackup",
-							ReadOnly:         false,
-							MountPath:        "/etc/lvm/backup",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:             "lvmcache",
-							ReadOnly:         false,
-							MountPath:        "/etc/lvm/cache",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-						{
-							Name:             "lvmlock",
-							ReadOnly:         false,
-							MountPath:        "/run/lock/lvm",
-							MountPropagation: &mountPropagationBidirectional,
-						},
-					},
-					TerminationMessagePath: "/termination.log",
-					ImagePullPolicy:        va.pullPolicy,
-					SecurityContext: &v1.SecurityContext{
-						Privileged: &privileged,
-					},
-					Resources: v1.ResourceRequirements{
-						Requests: v1.ResourceList{
-							"cpu":    resource.MustParse("50m"),
-							"memory": resource.MustParse("50Mi"),
-						},
-						Limits: v1.ResourceList{
-							"cpu":    resource.MustParse("100m"),
-							"memory": resource.MustParse("100Mi"),
-						},
-					},
-				},
-			},
-			Volumes: []v1.Volume{
-				{
-					Name: "devices",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: "/dev",
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "modules",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: "/lib/modules",
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmbackup",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "backup"),
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmcache",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "cache"),
-							Type: &hostPathType,
-						},
-					},
-				},
-				{
-					Name: "lvmlock",
-					VolumeSource: v1.VolumeSource{
-						HostPath: &v1.HostPathVolumeSource{
-							Path: filepath.Join(va.hostWritePath, "lock"),
-							Type: &hostPathType,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// If it already exists due to some previous errors, the pod will be cleaned up later automatically
-	// https://github.com/rancher/local-path-provisioner/issues/27
-	_, err = va.kubeClient.CoreV1().Pods(va.namespace).Create(ctx, provisionerPod, metav1.CreateOptions{})
-	if err != nil && !k8serror.IsAlreadyExists(err) {
-		return err
-	}
-
-	defer func() {
-		e := va.kubeClient.CoreV1().Pods(va.namespace).Delete(ctx, provisionerPod.Name, metav1.DeleteOptions{})
-		if e != nil {
-			klog.Errorf("unable to delete the provisioner pod: %v", e)
-		}
-	}()
-
-	completed := false
-	retrySeconds := 60
-	for range retrySeconds {
-		pod, err := va.kubeClient.CoreV1().Pods(va.namespace).Get(ctx, provisionerPod.Name, metav1.GetOptions{})
-		if pod.Status.Phase == v1.PodFailed {
-			// pod terminated in time, but with failure
-			// return ResourceExhausted so the requesting pod can be rescheduled to another node
-			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
-			klog.Info("provisioner pod terminated with failure")
-			return status.Error(codes.ResourceExhausted, "volume creation failed")
-		}
-		if err != nil {
-			klog.Errorf("error reading provisioner pod:%v", err)
-		} else if pod.Status.Phase == v1.PodSucceeded {
-			klog.Info("provisioner pod terminated successfully")
-			completed = true
-			break
-		}
-		klog.Infof("provisioner pod status:%s", pod.Status.Phase)
-		time.Sleep(1 * time.Second)
-	}
-	if !completed {
-		return fmt.Errorf("create process timeout after %v seconds", retrySeconds)
-	}
-
-	klog.Infof("Volume %v has been %vd on %v", va.name, va.action, va.nodeName)
-	return nil
 }
 
 // VgExists checks if the given volume group exists
@@ -762,7 +246,7 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 // used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
 func CreateLVS(vg string, name string, size uint64, lvmType string, integrity bool) (string, error) {
 
-	if lvExists(vg, name) {
+	if LvExists(vg, name) {
 		klog.Infof("logicalvolume: %s already exists\n", name)
 		return name, nil
 	}
@@ -822,7 +306,7 @@ func CreateLVS(vg string, name string, size uint64, lvmType string, integrity bo
 	return string(out), err
 }
 
-func lvExists(vg string, name string) bool {
+func LvExists(vg string, name string) bool {
 	vgname := vg + "/" + name
 	cmd := exec.Command("lvs", vgname, "--noheadings", "-o", "lv_name")
 	out, err := cmd.CombinedOutput()
@@ -833,8 +317,8 @@ func lvExists(vg string, name string) bool {
 	return name == strings.TrimSpace(string(out))
 }
 
-func extendLVS(vg string, name string, size uint64, isBlock bool) (string, error) {
-	if !lvExists(vg, name) {
+func ExtendLVS(vg string, name string, size uint64, isBlock bool) (string, error) {
+	if !LvExists(vg, name) {
 		return "", fmt.Errorf("logical volume %s does not exist", name)
 	}
 
@@ -855,8 +339,7 @@ func extendLVS(vg string, name string, size uint64, isBlock bool) (string, error
 
 // RemoveLVS executes lvremove
 func RemoveLVS(vg string, name string) (string, error) {
-
-	if !lvExists(vg, name) {
+	if !LvExists(vg, name) {
 		return fmt.Sprintf("logical volume %s does not exist. Assuming it has already been deleted.", name), nil
 	}
 	args := []string{"-q", "-y"}
