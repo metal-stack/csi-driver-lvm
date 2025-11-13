@@ -9,7 +9,6 @@ import (
 	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog/v2"
 )
 
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
@@ -53,7 +52,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	integrity, err := strconv.ParseBool(req.GetParameters()["integrity"])
 	if err != nil {
-		klog.Warningf("Could not parse 'integrity' request parameter, assuming false: %s", err)
+		d.log.Warn("could not parse 'integrity' request parameter, assuming false", "err", err)
 	}
 
 	volumeContext := req.GetParameters()
@@ -61,14 +60,14 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	volumeContext["RequiredBytes"] = size
 
-	klog.Infof("creating volume %s on node: %s", req.GetName(), nodeName)
+	d.log.Info("creating volume", "name", req.GetName(), "node", nodeName)
 
-	_, err = lvm.CreateLVS(d.vgName, req.GetName(), uint64(req.GetCapacityRange().GetRequiredBytes()), lvmType, integrity)
+	_, err = lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(req.GetCapacityRange().GetRequiredBytes()), lvmType, integrity)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create lv  %s: %w", req.GetName(), err)
 	}
 
-	klog.Infof("successfully created lv %s", req.GetName())
+	d.log.Info("successfully created lv", "name", req.GetName(), "node", nodeName)
 
 	topology := []*csi.Topology{{
 		Segments: map[string]string{topologyKeyNode: nodeName},
@@ -89,18 +88,18 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
 	}
 
-	existsVolume := lvm.LvExists(d.vgName, req.VolumeId)
+	existsVolume := lvm.LvExists(d.log, d.vgName, req.VolumeId)
 	if !existsVolume {
 		return &csi.DeleteVolumeResponse{}, nil
 	}
 
-	klog.Infof("getting capacity for node: %s and volume: %s", d.nodeId, req.VolumeId)
+	d.log.Info("getting request to delete volume", "volumeID", req.VolumeId, "node", d.nodeId)
 
-	_, err := lvm.RemoveLVS(d.vgName, req.VolumeId)
+	_, err := lvm.RemoveLVS(d.log, d.vgName, req.VolumeId)
 	if err != nil {
 		return nil, fmt.Errorf("unable to delete volume with id %s: %w", req.VolumeId, err)
 	}
-	klog.V(4).Infof("volume %v successfully deleted", req.VolumeId)
+	d.log.Info("volume successfully deleted", "volumeID", req.VolumeId, "node", d.nodeId)
 
 	return &csi.DeleteVolumeResponse{}, nil
 }

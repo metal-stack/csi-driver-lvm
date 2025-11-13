@@ -5,11 +5,10 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog/v2"
 )
 
 func (d *Driver) GetPluginInfo(ctx context.Context, req *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
-	klog.V(5).Infof("Using default GetPluginInfo")
+	d.log.Debug("using default GetPluginInfo")
 
 	if d.name == "" {
 		return nil, status.Error(codes.Unavailable, "Driver name not configured")
@@ -30,7 +29,7 @@ func (d *Driver) Probe(ctx context.Context, req *csi.ProbeRequest) (*csi.ProbeRe
 }
 
 func (d *Driver) GetPluginCapabilities(ctx context.Context, req *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
-	klog.V(5).Infof("Using default capabilities")
+	d.log.Debug("using default capabilities")
 	return &csi.GetPluginCapabilitiesResponse{
 		Capabilities: []*csi.PluginCapability{
 			{

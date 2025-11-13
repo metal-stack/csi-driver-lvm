@@ -2,13 +2,13 @@ package server
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
-	"k8s.io/klog/v2"
 )
 
 var (
@@ -22,6 +22,7 @@ type Driver struct {
 	csi.UnimplementedIdentityServer
 	csi.UnimplementedControllerServer
 
+	log               *slog.Logger
 	name              string
 	nodeId            string
 	version           string
@@ -35,7 +36,7 @@ type Driver struct {
 	server *grpc.Server
 }
 
-func NewDriver(driverName, nodeId, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string) (*Driver, error) {
+func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string) (*Driver, error) {
 	if driverName == "" {
 		return nil, fmt.Errorf("no driver name provided")
 	}
@@ -49,10 +50,10 @@ func NewDriver(driverName, nodeId, endpoint string, hostWritePath string, epheme
 		vendorVersion = version
 	}
 
-	klog.Infof("Driver: %v ", driverName)
-	klog.Infof("Version: %s", vendorVersion)
+	log.Info("initializing driver", "name", driverName, "nodeID", nodeId, "endpoint", endpoint, "hostWritePath", hostWritePath, "ephemeral", ephemeral, "maxVolumesPerNode", maxVolumesPerNode, "devicesPattern", devicesPattern, "vgName", vgName)
 
 	return &Driver{
+		log:               log,
 		name:              driverName,
 		version:           vendorVersion,
 		nodeId:            nodeId,

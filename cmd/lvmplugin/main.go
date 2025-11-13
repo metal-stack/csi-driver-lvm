@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"path"
 
@@ -51,9 +52,23 @@ func main() {
 }
 
 func handle() {
-	driver, err := server.NewDriver(*driverName, *nodeID, *endpoint, *hostWritePath, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName)
+	var lvlvar slog.LevelVar
+	err := lvlvar.UnmarshalText([]byte(*logLevel))
 	if err != nil {
-		fmt.Printf("Failed to initialize driver: %s\n", err.Error())
+		panic("not able to determine log-level")
+	}
+	log := slog.New(
+		slog.NewJSONHandler(
+			os.Stdout,
+			&slog.HandlerOptions{
+				Level: lvlvar.Level(),
+			},
+		),
+	)
+
+	driver, err := server.NewDriver(log, *driverName, *nodeID, *endpoint, *hostWritePath, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName)
+	if err != nil {
+		log.Error("failed to initialize driver", "error", err)
 		os.Exit(1)
 	}
 	driver.Run()

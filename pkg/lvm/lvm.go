@@ -2,14 +2,13 @@ package lvm
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -23,7 +22,7 @@ var (
 	fsTypeRegexp = regexp.MustCompile(fsTypeRegexpString)
 )
 
-func MountLV(lvname, mountPath string, vgName string, fsType string) (string, error) {
+func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 
 	formatted := false
@@ -35,7 +34,7 @@ func MountLV(lvname, mountPath string, vgName string, fsType string) (string, er
 	cmd := exec.Command("blkid", lvPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Infof("unable to check if %s is already formatted:%v", lvPath, err)
+		log.Error("unable to check if lv is already formatted", "lv-path", lvPath, "error", err)
 	}
 	matches := fsTypeRegexp.FindStringSubmatch(string(out))
 	if len(matches) > 1 {
@@ -57,7 +56,7 @@ func MountLV(lvname, mountPath string, vgName string, fsType string) (string, er
 		}
 		formatArgs = append(formatArgs, lvPath)
 
-		klog.Infof("formatting with mkfs.%s %s", fsType, strings.Join(formatArgs, " "))
+		slog.Debug("formatting with mkfs", "fs-type", fsType, "args", strings.Join(formatArgs, " "))
 		cmd = exec.Command(fmt.Sprintf("mkfs.%s", fsType), formatArgs...) //nolint:gosec
 		out, err = cmd.CombinedOutput()
 		if err != nil {
@@ -72,7 +71,7 @@ func MountLV(lvname, mountPath string, vgName string, fsType string) (string, er
 
 	// --make-shared is required that this mount is visible outside this container.
 	mountArgs := []string{"--make-shared", "-t", fsType, lvPath, mountPath}
-	klog.Infof("mountlv command: mount %s", mountArgs)
+	slog.Debug("mounting with mount", "args", strings.Join(mountArgs, " "))
 	cmd = exec.Command("mount", mountArgs...)
 	out, err = cmd.CombinedOutput()
 	if err != nil {
@@ -85,11 +84,11 @@ func MountLV(lvname, mountPath string, vgName string, fsType string) (string, er
 	if err != nil {
 		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%w", mountPath, err)
 	}
-	klog.Infof("mountlv output:%s", out)
+	slog.Debug("mountlv output", "output", out)
 	return "", nil
 }
 
-func BindMountLV(lvname, mountPath string, vgName string) (string, error) {
+func BindMountLV(log *slog.Logger, lvname, mountPath string, vgName string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 	_, err := os.Create(mountPath)
 	if err != nil {
@@ -99,7 +98,7 @@ func BindMountLV(lvname, mountPath string, vgName string) (string, error) {
 	// --make-shared is required that this mount is visible outside this container.
 	// --bind is required for raw block volumes to make them visible inside the pod.
 	mountArgs := []string{"--make-shared", "--bind", lvPath, mountPath}
-	klog.Infof("bindmountlv command: mount %s", mountArgs)
+	slog.Debug("bindmountlv command: mount", "args", strings.Join(mountArgs, " "))
 	cmd := exec.Command("mount", mountArgs...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -112,78 +111,79 @@ func BindMountLV(lvname, mountPath string, vgName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%w", mountPath, err)
 	}
-	klog.Infof("bindmountlv output:%s", out)
+	slog.Debug("bindmountlv output", "output", out)
 	return "", nil
 }
 
-func UmountLV(targetPath string) {
+func UmountLV(log *slog.Logger, targetPath string) {
 	cmd := exec.Command("umount", "--lazy", "--force", targetPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Errorf("unable to umount %s output:%s err:%v", targetPath, string(out), err)
+		//RETURN err ?
+		log.Error("unable to umount", "targetPath", targetPath, "output", out, "error", err)
 	}
 }
 
 // VgExists checks if the given volume group exists
-func vgExists(vgname string) bool {
+func vgExists(log *slog.Logger, vgname string) bool {
 	cmd := exec.Command("vgs", vgname, "--noheadings", "-o", "vg_name")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Infof("unable to list existing volumegroups:%v", err)
+		log.Debug("unable to list existing volumegroups", "error", err)
 		return false
 	}
 	return vgname == strings.TrimSpace(string(out))
 }
 
 // VgActivate execute vgchange -ay to activate all volumes of the volume group
-func vgActivate() {
+func vgActivate(log *slog.Logger) {
 	// scan for vgs and activate if any
 	cmd := exec.Command("vgscan")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Infof("unable to scan for volumegroups:%s %v", out, err)
+		log.Debug("unable to scan for volumegroups", "output", out, "error", err)
 	}
 	cmd = exec.Command("vgchange", "-ay")
 	_, err = cmd.CombinedOutput()
 	if err != nil {
-		klog.Infof("unable to activate volumegroups:%s %v", out, err)
+		log.Debug("unable to activate volumegroups", "output", out, "error", err)
 	}
 }
 
-func devices(devicesPattern []string) (devices []string, err error) {
+func devices(log *slog.Logger, devicesPattern []string) (devices []string, err error) {
 	for _, devicePattern := range devicesPattern {
-		klog.Infof("search devices: %s ", devicePattern)
+		log.Debug("search devices", "pattern", devicePattern)
 		matches, err := filepath.Glob(strings.TrimSpace(devicePattern))
 		if err != nil {
 			return nil, err
 		}
-		klog.Infof("found: %s", matches)
+		log.Debug("found devices", "matches", matches)
 		devices = append(devices, matches...)
 	}
 	return devices, nil
 }
 
 // CreateVG creates a volume group matching the given device patterns
-func CreateVG(name string, devicesPattern string) (string, error) {
+func CreateVG(log *slog.Logger, name string, devicesPattern string) (string, error) {
 	dp := strings.Split(devicesPattern, ",")
 	if len(dp) == 0 {
 		return name, fmt.Errorf("invalid empty flag %v", dp)
 	}
 
-	vgexists := vgExists(name)
+	vgexists := vgExists(log, name)
 	if vgexists {
-		klog.Infof("volumegroup: %s already exists\n", name)
+		log.Info("volumegroup already exists", "name", name)
 		return name, nil
 	}
-	vgActivate()
+	vgActivate(log)
 	// now check again for existing vg again
-	vgexists = vgExists(name)
+	vgexists = vgExists(log, name)
 	if vgexists {
-		klog.Infof("volumegroup: %s already exists\n", name)
+		log.Info("volumegroup already exists", "name", name)
 		return name, nil
 	}
 
-	physicalVolumes, err := devices(dp)
+	physicalVolumes, err := devices(log, dp)
 	if err != nil {
 		return "", fmt.Errorf("unable to lookup devices from devicesPattern %s, err:%w", devicesPattern, err)
 	}
@@ -194,18 +194,18 @@ func CreateVG(name string, devicesPattern string) (string, error) {
 	for _, tag := range tags {
 		args = append(args, "--addtag", tag)
 	}
-	klog.Infof("create vg with command: vgcreate %v", args)
+	log.Debug("creating volumegroup", "name", name, "devices", physicalVolumes)
 	cmd := exec.Command("vgcreate", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-// CreateLVS creates the new volume
+// CreateLV creates the new volume
 // used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
-func CreateLVS(vg string, name string, size uint64, lvmType string, integrity bool) (string, error) {
+func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType string, integrity bool) (string, error) {
 
-	if LvExists(vg, name) {
-		klog.Infof("logicalvolume: %s already exists\n", name)
+	if LvExists(log, vg, name) {
+		log.Debug("logicalvolume already exists", "name", name)
 		return name, nil
 	}
 
@@ -230,7 +230,7 @@ func CreateLVS(vg string, name string, size uint64, lvmType string, integrity bo
 	}
 
 	if pvs < 2 {
-		klog.Warning("pvcount is <2 only linear is supported")
+		log.Warn("pvcount is <2 only linear is supported")
 		lvmType = linearType
 	}
 
@@ -258,25 +258,25 @@ func CreateLVS(vg string, name string, size uint64, lvmType string, integrity bo
 		args = append(args, "--addtag", tag)
 	}
 	args = append(args, vg)
-	klog.Infof("lvcreate %s", args)
+	log.Debug("lvcreate", "args", args)
 	cmd := exec.Command("lvcreate", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
-func LvExists(vg string, name string) bool {
+func LvExists(log *slog.Logger, vg string, name string) bool {
 	vgname := vg + "/" + name
 	cmd := exec.Command("lvs", vgname, "--noheadings", "-o", "lv_name")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		klog.Infof("unable to list existing volumes:%v", err)
+		log.Error("unable to list existing volumes", "error", err)
 		return false
 	}
 	return name == strings.TrimSpace(string(out))
 }
 
-func ExtendLVS(vg string, name string, size uint64, isBlock bool) (string, error) {
-	if !LvExists(vg, name) {
+func ExtendLVS(log *slog.Logger, vg string, name string, size uint64, isBlock bool) (string, error) {
+	if !LvExists(log, vg, name) {
 		return "", fmt.Errorf("logical volume %s does not exist", name)
 	}
 
@@ -289,20 +289,20 @@ func ExtendLVS(vg string, name string, size uint64, isBlock bool) (string, error
 		args = append(args, "-r")
 	}
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
-	klog.Infof("lvextend %s", args)
+	log.Debug("lvextend", "args", args)
 	cmd := exec.Command("lvextend", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
 
 // RemoveLVS executes lvremove
-func RemoveLVS(vg string, name string) (string, error) {
-	if !LvExists(vg, name) {
+func RemoveLVS(log *slog.Logger, vg string, name string) (string, error) {
+	if !LvExists(log, vg, name) {
 		return fmt.Sprintf("logical volume %s does not exist. Assuming it has already been deleted.", name), nil
 	}
 	args := []string{"-q", "-y"}
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
-	klog.Infof("lvremove %s", args)
+	log.Debug("lvremove", "args", args)
 	cmd := exec.Command("lvremove", args...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err

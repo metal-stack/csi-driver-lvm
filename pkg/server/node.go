@@ -16,7 +16,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/klog/v2"
 )
 
 const topologyKeyNode = "topology.lvm.csi/node"
@@ -68,37 +67,36 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 		volID := req.GetVolumeId()
 
-		output, err := lvm.CreateVG(d.vgName, d.devicesPattern)
+		output, err := lvm.CreateVG(d.log, d.vgName, d.devicesPattern)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = lvm.CreateLVS(d.vgName, volID, size, req.GetVolumeContext()["type"], false)
+		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, req.GetVolumeContext()["type"], false)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}
 
-		klog.V(4).Infof("ephemeral mode: created volume: %s, size: %d", volID, size)
+		d.log.Info("ephemeral mode: created volume", "volume", volID, "size", size)
 	}
 
 	if req.GetVolumeCapability().GetBlock() != nil {
 
-		output, err := lvm.BindMountLV(req.GetVolumeId(), targetPath, d.vgName)
+		output, err := lvm.BindMountLV(d.log, req.GetVolumeId(), targetPath, d.vgName)
 		if err != nil {
 			return nil, fmt.Errorf("unable to bind mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
-		klog.Infof("block lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), d.vgName, d.devicesPattern, targetPath)
+		d.log.Info("block lv", "id", req.GetVolumeId(), "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
 
-		output, err := lvm.MountLV(req.GetVolumeId(), targetPath, d.vgName, req.GetVolumeCapability().GetMount().GetFsType())
+		output, err := lvm.MountLV(d.log, req.GetVolumeId(), targetPath, d.vgName, req.GetVolumeCapability().GetMount().GetFsType())
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
-		klog.Infof("mounted lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), d.vgName, d.devicesPattern, targetPath)
-
+		d.log.Info("mounted lv", "id", req.GetVolumeId(), "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
 	}
 
 	return &csi.NodePublishVolumeResponse{}, nil
@@ -109,7 +107,7 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	// implement deletion of ephemeral volumes
 	volID := req.GetVolumeId()
 
-	klog.Infof("NodeUnpublishRequest: %s", req)
+	d.log.Info("NodeUnpublishRequest", "request", req)
 	// Check arguments
 	if len(volID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
@@ -118,17 +116,16 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
-	lvm.UmountLV(req.GetTargetPath())
+	lvm.UmountLV(d.log, req.GetTargetPath())
 
 	// ephemeral volumes start with "csi-"
 	if strings.HasPrefix(volID, "csi-") {
 		// remove ephemeral volume here
-		output, err := lvm.RemoveLVS(d.vgName, volID)
+		output, err := lvm.RemoveLVS(d.log, d.vgName, volID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to delete lv: %w output:%s", err, output)
 		}
-		klog.Infof("lv %s vg:%s deleted", volID, d.vgName)
-
+		d.log.Info("lv deleted", "id", volID, "vg", d.vgName)
 	}
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
@@ -258,11 +255,11 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	isBlock := false
 	m := info.Mode()
 	if !m.IsDir() {
-		klog.Warning("volume expand request on block device: filesystem resize has to be done externally")
+		d.log.Warn("volume expand request on block device: filesystem resize has to be done externally")
 		isBlock = true
 	}
 
-	output, err := lvm.ExtendLVS(d.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
+	output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to umount lv: %w output:%s", err, output)
