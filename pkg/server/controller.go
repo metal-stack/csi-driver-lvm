@@ -9,7 +9,6 @@ import (
 	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 	"k8s.io/klog/v2"
 )
 
@@ -116,13 +115,6 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 					},
 				},
 			},
-			{
-				Type: &csi.ControllerServiceCapability_Rpc{
-					Rpc: &csi.ControllerServiceCapability_RPC{
-						Type: csi.ControllerServiceCapability_RPC_GET_CAPACITY,
-					},
-				},
-			},
 		},
 	}, nil
 }
@@ -152,36 +144,6 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 			Parameters:         req.GetParameters(),
 		},
 	}, nil
-}
-
-func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
-	nodeName := req.GetAccessibleTopology().GetSegments()[topologyKeyNode]
-
-	if !d.isRequestForThisNode(nodeName) {
-		return &csi.GetCapacityResponse{}, nil
-	}
-
-	lvmType := req.GetParameters()["type"]
-	switch lvmType {
-	case "linear", "mirror", "striped":
-		// These are supported lvm types
-	default:
-		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
-	}
-
-	klog.Infof("getting capacity for node: %s and lvm-type: %s", nodeName, lvmType)
-
-	totalBytes, err := lvm.VgStats(d.vgName)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get capacity of vg %s", d.vgName)
-	}
-
-	return &csi.GetCapacityResponse{
-		AvailableCapacity: totalBytes,
-		MaximumVolumeSize: wrapperspb.Int64(totalBytes),
-		MinimumVolumeSize: wrapperspb.Int64(0),
-	}, nil
-
 }
 
 func (d *Driver) isRequestForThisNode(nodeName string) bool {

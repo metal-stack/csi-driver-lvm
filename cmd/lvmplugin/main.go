@@ -27,6 +27,7 @@ var (
 	showVersion       = flag.Bool("version", false, "Show version.")
 	devicesPattern    = flag.String("devices", "", "comma-separated grok patterns of the physical volumes to use.")
 	vgName            = flag.String("vgname", "csi-lvm", "name of volume group")
+	logLevel          = flag.String("log-level", "info", "log-level of the application")
 
 	// Set by the build process
 	version = ""
