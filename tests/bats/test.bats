@@ -4,6 +4,8 @@
     run kubectl create namespace csi-driver-lvm || true
     run helm upgrade --debug --install --repo ${HELM_REPO} --namespace csi-driver-lvm csi-driver-lvm csi-driver-lvm --values values.yaml --wait --timeout=120s
     [ "$status" -eq 0 ]
+
+    sleep 5
     run kubectl wait -n csi-driver-lvm --for=condition=ready pod --all --timeout=60s
     [ "$status" -eq 0 ]
 }
