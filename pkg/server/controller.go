@@ -87,7 +87,6 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 }
 
 func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	// TODO How to check node? --> exists lv on this node?
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
 	}
@@ -96,6 +95,8 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	if !existsVolume {
 		return &csi.DeleteVolumeResponse{}, nil
 	}
+
+	klog.Infof("getting capacity for node: %s and volume: %s", d.nodeId, req.VolumeId)
 
 	_, err := lvm.RemoveLVS(d.vgName, req.VolumeId)
 	if err != nil {
@@ -158,11 +159,8 @@ func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (
 	nodeName := req.GetAccessibleTopology().GetSegments()[topologyKeyNode]
 
 	if !d.isRequestForThisNode(nodeName) {
-		//skip gracefully?
 		return &csi.GetCapacityResponse{}, nil
 	}
-
-	klog.Infof("Getting capacity for node: %s", nodeName)
 
 	lvmType := req.GetParameters()["type"]
 	switch lvmType {
@@ -171,6 +169,8 @@ func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (
 	default:
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
+
+	klog.Infof("getting capacity for node: %s and lvm-type: %s", nodeName, lvmType)
 
 	totalBytes, err := lvm.VgStats(d.vgName)
 	if err != nil {
