@@ -6,7 +6,6 @@ TAGS := -tags 'osusergo netgo static_build'
 
 PLATFORM := $(GOOS)/$(GOARCH)$(if $(GOARM),/v$(GOARM))
 BINARY_LVMPLUGIN := $(PLATFORM)/lvmplugin
-BINARY_PROVISIONER:= $(PLATFORM)/provisioner
 BINARY_CONTROLLER:= $(PLATFORM)/controller
 
 GO111MODULE := on
@@ -45,7 +44,7 @@ LINKMODE := $(LINKMODE) \
 		 -X 'github.com/metal-stack/v.GitSHA1=$(SHA)' \
 		 -X 'github.com/metal-stack/v.BuildDate=$(BUILDDATE)'
 
-all: provisioner lvmplugin
+all: lvmplugin
 
 .PHONY: lvmplugin
 lvmplugin:
@@ -59,25 +58,10 @@ lvmplugin:
 	cd bin/ && \
 	sha512sum $(BINARY_LVMPLUGIN) > $(BINARY_LVMPLUGIN).sha512
 
-.PHONY: provisioner
-provisioner:
-	go mod tidy
-	go build \
-		$(TAGS) \
-		-ldflags \
-		"$(LINKMODE)" \
-		-o bin/$(BINARY_PROVISIONER) \
-		./cmd/provisioner
-	cd bin/ && \
-	sha512sum $(BINARY_PROVISIONER) > $(BINARY_PROVISIONER).sha512
 
 .PHONY: build-plugin
 build-plugin: lvmplugin
 	docker build -t csi-driver-lvm -f cmd/lvmplugin/Dockerfile .
-
-.PHONY: build-provisioner
-build-provisioner: provisioner
-	docker build -t csi-driver-lvm-provisioner -f cmd/provisioner/Dockerfile .
 
 /dev/loop%:
 	@fallocate --length 4G loop$*.img
@@ -105,7 +89,6 @@ kind:
 			--config tests/kind.yaml \
 			--kubeconfig $(KUBECONFIG); fi
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm
-	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-provisioner
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-controller
 
 .PHONY: rm-kind
@@ -114,7 +97,7 @@ rm-kind:
 
 RERUN ?= 1
 .PHONY: test
-test: build-plugin build-provisioner build-controller /dev/loop100 /dev/loop101 kind
+test: build-plugin build-controller /dev/loop100 /dev/loop101 kind
 	@cd tests && docker build -t csi-bats . && cd -
 	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \
