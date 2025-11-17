@@ -14,7 +14,7 @@ import (
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	nodeName := req.GetAccessibilityRequirements().GetPreferred()[0].GetSegments()[topologyKeyNode]
 	if !d.isRequestForThisNode(nodeName) {
-		return &csi.CreateVolumeResponse{}, nil
+		return nil, status.Errorf(codes.FailedPrecondition, "node not suitable for provisioning")
 	}
 
 	// Check arguments
@@ -90,7 +90,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 
 	existsVolume := lvm.LvExists(d.log, d.vgName, req.VolumeId)
 	if !existsVolume {
-		return &csi.DeleteVolumeResponse{}, nil
+		return nil, status.Errorf(codes.FailedPrecondition, "volume does not exist")
 	}
 
 	d.log.Info("getting request to delete volume", "volumeID", req.VolumeId, "node", d.nodeId)
