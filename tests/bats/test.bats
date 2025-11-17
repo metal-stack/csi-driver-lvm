@@ -239,6 +239,21 @@
     [ "$NOA" = "csi-driver-lvm-worker2" ]
 }
 
+@test "cleanup csi-driver-lvm eviction" {
+    run kubectl delete -f files/statefulset.pvc-annotation.yaml --wait --grace-period=0 --timeout=30s
+    [ "$status" -eq 0 ]
+    run kubectl delete -f files/statefulset.pod-annotation.yaml --wait --grace-period=0 --timeout=30s
+    [ "$status" -eq 0 ]
+    run kubectl delete -f files/statefulset.no-annotation.yaml --wait --grace-period=0 --timeout=30s
+    [ "$status" -eq 0 ]
+    # cleanup pvc in default ns
+    run kubectl delete pvc --all
+    [ "$status" -eq 0 ]
+
+    run kubectl uncordon csi-driver-lvm-worker2 
+    [ "$status" -eq 0 ]
+}
+
 @test "delete csi-lvm-controller" {
     echo "⏳ Wait 10s for all PVCs to be cleaned up..." >&3
     sleep 10
