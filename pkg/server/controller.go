@@ -18,11 +18,11 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	// Check arguments
 	if len(req.GetName()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Name missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume name missing in request")
 	}
 	caps := req.GetVolumeCapabilities()
 	if caps == nil {
-		return nil, status.Error(codes.InvalidArgument, "Volume Capabilities missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume capabilities missing in request")
 	}
 
 	// Keep a record of the requested access types.
@@ -63,7 +63,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	_, err = lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(req.GetCapacityRange().GetRequiredBytes()), lvmType, integrity)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create lv  %s: %w", req.GetName(), err)
+		return nil, fmt.Errorf("unable to create lv %s: %w", req.GetName(), err)
 	}
 
 	d.log.Info("successfully created lv", "name", req.GetName(), "node", nodeName)
@@ -85,7 +85,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	d.log.Debug("received DeleteVolume request", "volume", req.GetVolumeId(), "node", d.nodeId)
 	if len(req.GetVolumeId()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume id missing in request")
 	}
 
 	existsVolume := lvm.LvExists(d.log, d.vgName, req.VolumeId)
@@ -128,10 +128,10 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
+		return nil, status.Error(codes.InvalidArgument, "volume id cannot be empty")
 	}
 	if len(req.GetVolumeCapabilities()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, req.GetVolumeId())
+		return nil, status.Error(codes.InvalidArgument, "volume capabilities cannot be empty")
 	}
 
 	for _, cap := range req.GetVolumeCapabilities() {
