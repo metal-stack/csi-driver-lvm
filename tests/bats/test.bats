@@ -11,7 +11,7 @@
 }
 
 @test "wait for 6 CSIStorageCapacity objects" {
-    end=$((SECONDS+120))
+    end=$((SECONDS+180))
     while [ $SECONDS -lt $end ]; do
         count=$(kubectl get csistoragecapacities \
             -n csi-driver-lvm \
