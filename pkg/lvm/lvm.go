@@ -136,7 +136,7 @@ func UmountLV(log *slog.Logger, targetPath string) {
 }
 
 // VgExists checks if the given volume group exists
-func vgExists(log *slog.Logger, vgname string) bool {
+func VgExists(log *slog.Logger, vgname string) bool {
 	cmd := exec.Command("vgs", vgname, "--noheadings", "-o", "vg_name")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -147,7 +147,7 @@ func vgExists(log *slog.Logger, vgname string) bool {
 }
 
 // VgActivate execute vgchange -ay to activate all volumes of the volume group
-func vgActivate(log *slog.Logger) {
+func VgActivate(log *slog.Logger) {
 	// scan for vgs and activate if any
 	cmd := exec.Command("vgscan")
 	out, err := cmd.CombinedOutput()
@@ -181,14 +181,14 @@ func CreateVG(log *slog.Logger, name string, devicesPattern string) (string, err
 		return name, fmt.Errorf("invalid empty flag %v", dp)
 	}
 
-	vgexists := vgExists(log, name)
+	vgexists := VgExists(log, name)
 	if vgexists {
 		log.Info("volumegroup already exists", "name", name)
 		return name, nil
 	}
-	vgActivate(log)
+	VgActivate(log)
 	// now check again for existing vg again
-	vgexists = vgExists(log, name)
+	vgexists = VgExists(log, name)
 	if vgexists {
 		log.Info("volumegroup already exists", "name", name)
 		return name, nil

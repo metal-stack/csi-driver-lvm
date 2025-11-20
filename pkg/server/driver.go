@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"google.golang.org/grpc"
 )
 
@@ -48,6 +49,22 @@ func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWriteP
 	}
 	if version != "" {
 		vendorVersion = version
+	}
+
+	log.Info("ensuring vg setup")
+	vgexists := lvm.VgExists(log, vgName)
+	if !vgexists {
+		log.Info("vg not found", "vgName", vgName)
+		lvm.VgActivate(log)
+		// now check again for existing vg again
+		vgexists := lvm.VgExists(log, vgName)
+		if !vgexists {
+			log.Info("vg still not existing - creating...", "vgName", vgName)
+			_, err := lvm.CreateVG(log, vgName, devicesPattern)
+			if err != nil {
+				return nil, fmt.Errorf("unable to create initial volume group: %w", err)
+			}
+		}
 	}
 
 	log.Info("initializing driver", "name", driverName, "nodeID", nodeId, "endpoint", endpoint, "hostWritePath", hostWritePath, "ephemeral", ephemeral, "maxVolumesPerNode", maxVolumesPerNode, "devicesPattern", devicesPattern, "vgName", vgName)
