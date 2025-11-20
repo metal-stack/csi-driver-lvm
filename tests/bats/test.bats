@@ -6,7 +6,7 @@
     [ "$status" -eq 0 ]
 
     sleep 5
-    run kubectl wait -n csi-driver-lvm --for=condition=ready pod --all --timeout=60s
+    run kubectl rollout status daemonset/csi-driver-lvm -n csi-driver-lvm --timeout=180s
     [ "$status" -eq 0 ]
 }
 
