@@ -15,9 +15,6 @@ import (
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	d.log.Debug("received CreateVolume request", "name", req.GetName(), "node", d.nodeId)
 	nodeName := req.GetAccessibilityRequirements().GetPreferred()[0].GetSegments()[topologyKeyNode]
-	if !d.isTopologyCompatible(req) {
-		return nil, status.Errorf(codes.ResourceExhausted, "node %s not suitable for provisioning", d.nodeId)
-	}
 
 	// Check arguments
 	if len(req.GetName()) == 0 {
@@ -186,55 +183,4 @@ func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (
 		MinimumVolumeSize: wrapperspb.Int64(0),
 	}, nil
 
-}
-
-// returns true if the CreateVolume request can be served on this node
-func (d *Driver) isTopologyCompatible(req *csi.CreateVolumeRequest) bool {
-	tr := req.GetAccessibilityRequirements()
-
-	if tr == nil {
-		return true
-	}
-
-	currentNodeTopo := map[string]string{
-		topologyKeyNode: d.nodeId,
-	}
-
-	//check mandatory requisite first
-	if len(tr.GetRequisite()) > 0 {
-		match := false
-		for _, topo := range tr.GetRequisite() {
-			if topologyMatches(currentNodeTopo, topo.GetSegments()) {
-				match = true
-				break
-			}
-		}
-		if !match {
-			return false
-		}
-	}
-
-	// check optional preferred next
-	if len(tr.GetPreferred()) > 0 {
-		for _, topo := range tr.GetPreferred() {
-			if topologyMatches(currentNodeTopo, topo.GetSegments()) {
-				return true
-			}
-		}
-	}
-
-	d.log.Debug("either no preferred or not matching preferred but allowed by requisite")
-
-	// Either no preferred or not matching preferred but allowed by requisite
-	return true
-}
-
-// Utility: does node segments match volume segment definition?
-func topologyMatches(node map[string]string, segments map[string]string) bool {
-	for k, v := range segments {
-		if node[k] != v {
-			return false
-		}
-	}
-	return true
 }
