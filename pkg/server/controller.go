@@ -173,6 +173,13 @@ func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (
 		return nil, fmt.Errorf("unable to get capacity of vg %s", d.vgName)
 	}
 
+	// adjust available capacity for mirrored volumes
+	if lvmType == "mirror" {
+		totalBytes = totalBytes / 2
+	}
+
+	d.log.Info("available capacity", "bytes", totalBytes, "node", nodeName, "lvm-type", lvmType)
+
 	return &csi.GetCapacityResponse{
 		AvailableCapacity: totalBytes,
 		MaximumVolumeSize: wrapperspb.Int64(totalBytes),

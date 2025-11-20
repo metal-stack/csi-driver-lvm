@@ -10,6 +10,47 @@
     [ "$status" -eq 0 ]
 }
 
+@test "wait for 6 CSIStorageCapacity objects" {
+    end=$((SECONDS+60))
+    while [ $SECONDS -lt $end ]; do
+        count=$(kubectl get csistoragecapacities \
+            -n csi-driver-lvm \
+            --no-headers 2>/dev/null | wc -l)
+        if [ "$count" -ge 6 ]; then
+            break
+        fi
+        sleep 2
+    done
+
+    [ "$count" -ge 6 ]
+}
+
+@test "record CSIStorageCapacity before pod creation" {
+    export CAP_LINEAR_BEFORE=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+        | jq -r '
+            .items[]
+            | select(.storageClassName == "csi-driver-lvm-linear")
+            | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+            | .capacity
+            | sub("Mi$"; "") 
+        ')
+    [ -n "$CAP_LINEAR_BEFORE" ]
+    echo "$CAP_LINEAR_BEFORE" > /tmp/cap_linear_before.txt
+
+    export CAP_MIRROR_BEFORE=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+    | jq -r '
+        .items[]
+        | select(.storageClassName == "csi-driver-lvm-mirror")
+        | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+        | .capacity
+        | sub("Mi$"; "") 
+    ')
+    [ -n "$CAP_MIRROR_BEFORE" ]
+    echo "$CAP_MIRROR_BEFORE" > /tmp/cap_mirror_before.txt
+
+    (( CAP_LINEAR_BEFORE == 2 * CAP_MIRROR_BEFORE ))
+}
+
 @test "deploy inline pod with ephemeral volume" {
     run kubectl apply -f files/pod.inline.vol.yaml --wait --timeout=30s
     [ "$status" -eq 0 ]
@@ -20,11 +61,112 @@
     [ "$status" -eq 0 ]
 }
 
+@test "record CSIStorageCapacity after pod creation (wait until changed)" {
+    end=$((SECONDS+60))
+    CAP_LINEAR_AFTER=""
+    CAP_LINEAR_BEFORE=$(cat /tmp/cap_linear_before.txt)
+
+    while [ $SECONDS -lt $end ]; do
+        CAP_LINEAR_AFTER=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+            | jq -r '
+                .items[]
+                | select(.storageClassName == "csi-driver-lvm-linear")
+                | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+                | .capacity
+                | sub("Mi$"; "") 
+            ')
+
+        if [ "$CAP_LINEAR_AFTER" != "$CAP_LINEAR_BEFORE" ] && [ -n "$CAP_LINEAR_AFTER" ]; then
+            echo "Capacity changed from $CAP_LINEAR_BEFORE to $CAP_LINEAR_AFTER"
+            break
+        fi
+        sleep 2
+    done
+
+    DIFF=$(( CAP_LINEAR_BEFORE - CAP_LINEAR_AFTER ))
+    [ "$DIFF" -eq 100 ]
+
+    end=$((SECONDS+60))
+    CAP_MIRROR_AFTER=""
+    CAP_MIRROR_BEFORE=$(cat /tmp/cap_mirror_before.txt)
+
+    while [ $SECONDS -lt $end ]; do
+        CAP_MIRROR_AFTER=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+            | jq -r '
+                .items[]
+                | select(.storageClassName == "csi-driver-lvm-mirror")
+                | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+                | .capacity
+                | sub("Mi$"; "") 
+            ')
+
+        if [ "$CAP_MIRROR_AFTER" != "$CAP_MIRROR_BEFORE" ] && [ -n "$CAP_MIRROR_AFTER" ]; then
+            echo "Capacity changed from $CAP_MIRROR_BEFORE to $CAP_MIRROR_AFTER"
+            break
+        fi
+        sleep 2
+    done
+
+    DIFF=$(( CAP_MIRROR_BEFORE - CAP_MIRROR_AFTER ))
+    [ "$DIFF" -eq 50 ]
+
+     (( CAP_LINEAR_AFTER == 2 * CAP_MIRROR_AFTER ))
+}
+
 @test "delete inline linear pod" {
     run kubectl delete -f files/pod.inline.vol.yaml --grace-period=0 --wait --timeout=30s
     [ "$status" -eq 0 ]
 }
 
+@test "record CSIStorageCapacity after pod deletion (wait until changed)" {
+    end=$((SECONDS+60))
+    CAP_LINEAR_AFTER=""
+    CAP_LINEAR_START=$(cat /tmp/cap_linear_before.txt)
+
+    while [ $SECONDS -lt $end ]; do
+        CAP_LINEAR_AFTER=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+            | jq -r '
+                .items[]
+                | select(.storageClassName == "csi-driver-lvm-linear")
+                | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+                | .capacity
+                | sub("Mi$"; "") 
+            ')
+
+        if [ "$CAP_LINEAR_AFTER" == "$CAP_LINEAR_START" ] && [ -n "$CAP_LINEAR_AFTER" ]; then
+            echo "Capacity changed to $CAP_LINEAR_START"
+            break
+        fi
+        sleep 2
+    done
+
+    DIFF=$(( CAP_LINEAR_START - CAP_LINEAR_AFTER ))
+    [ "$DIFF" -eq 0 ]
+
+    end=$((SECONDS+60))
+    CAP_MIRROR_AFTER=""
+    CAP_MIRROR_START=$(cat /tmp/cap_mirror_before.txt)
+
+    while [ $SECONDS -lt $end ]; do
+        CAP_MIRROR_AFTER=$(kubectl get csistoragecapacities -n csi-driver-lvm -o json \
+            | jq -r '
+                .items[]
+                | select(.storageClassName == "csi-driver-lvm-mirror")
+                | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
+                | .capacity
+                | sub("Mi$"; "") 
+            ')
+
+        if [ "$CAP_MIRROR_AFTER" == "$CAP_MIRROR_START" ] && [ -n "$CAP_MIRROR_AFTER" ]; then
+            echo "Capacity changed to $CAP_MIRROR_START"
+            break
+        fi
+        sleep 2
+    done
+
+    DIFF=$(( CAP_MIRROR_START - CAP_MIRROR_AFTER ))
+    [ "$DIFF" -eq 0 ]
+}
 
 @test "create pvc linear" {
     run kubectl apply -f files/pvc.linear.yaml --wait --timeout=30s
