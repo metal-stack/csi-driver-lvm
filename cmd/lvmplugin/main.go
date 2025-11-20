@@ -3,20 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"path"
 
 	"github.com/metal-stack/csi-driver-lvm/pkg/server"
 )
-
-func init() {
-	err := flag.Set("logtostderr", "true")
-	if err != nil {
-		log.Printf("unable to configure logging to stdout:%v\n", err)
-	}
-}
 
 var (
 	endpoint          = flag.String("endpoint", "unix://tmp/csi.sock", "CSI endpoint")

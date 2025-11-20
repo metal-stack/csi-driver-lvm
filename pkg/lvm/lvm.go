@@ -36,6 +36,7 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 	if err != nil {
 		log.Error("unable to check if lv is already formatted", "lv-path", lvPath, "error", err)
 	}
+
 	matches := fsTypeRegexp.FindStringSubmatch(string(out))
 	if len(matches) > 1 {
 		if matches[1] == "xfs_external_log" { // If old xfs signature was found
@@ -56,7 +57,7 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 		}
 		formatArgs = append(formatArgs, lvPath)
 
-		slog.Debug("formatting with mkfs", "fs-type", fsType, "args", strings.Join(formatArgs, " "))
+		log.Debug("formatting with mkfs", "fs-type", fsType, "args", strings.Join(formatArgs, " "))
 		cmd = exec.Command(fmt.Sprintf("mkfs.%s", fsType), formatArgs...) //nolint:gosec
 		out, err = cmd.CombinedOutput()
 		if err != nil {
@@ -71,7 +72,7 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 
 	// --make-shared is required that this mount is visible outside this container.
 	mountArgs := []string{"--make-shared", "-t", fsType, lvPath, mountPath}
-	slog.Debug("mounting with mount", "args", strings.Join(mountArgs, " "))
+	log.Debug("mounting with mount", "args", strings.Join(mountArgs, " "))
 	cmd = exec.Command("mount", mountArgs...)
 	out, err = cmd.CombinedOutput()
 	if err != nil {
@@ -84,7 +85,7 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 	if err != nil {
 		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%w", mountPath, err)
 	}
-	slog.Debug("mountlv output", "output", out)
+	log.Debug("mountlv output", "output", out)
 	return "", nil
 }
 
@@ -98,7 +99,7 @@ func BindMountLV(log *slog.Logger, lvname, mountPath string, vgName string) (str
 	// --make-shared is required that this mount is visible outside this container.
 	// --bind is required for raw block volumes to make them visible inside the pod.
 	mountArgs := []string{"--make-shared", "--bind", lvPath, mountPath}
-	slog.Debug("bindmountlv command: mount", "args", strings.Join(mountArgs, " "))
+	log.Debug("bindmountlv command: mount", "args", strings.Join(mountArgs, " "))
 	cmd := exec.Command("mount", mountArgs...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -111,7 +112,7 @@ func BindMountLV(log *slog.Logger, lvname, mountPath string, vgName string) (str
 	if err != nil {
 		return "", fmt.Errorf("unable to change permissions of volume mount %s err:%w", mountPath, err)
 	}
-	slog.Debug("bindmountlv output", "output", out)
+	log.Debug("bindmountlv output", "output", out)
 	return "", nil
 }
 

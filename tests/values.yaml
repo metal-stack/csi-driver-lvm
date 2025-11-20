@@ -11,3 +11,4 @@ provisionerImage:
 
 lvm:
   devicePattern: /dev/loop100,/dev/loop101
+  logLevel: debug
