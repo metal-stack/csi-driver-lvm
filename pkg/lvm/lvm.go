@@ -1,6 +1,7 @@
 package lvm
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -21,6 +22,15 @@ const (
 var (
 	fsTypeRegexp = regexp.MustCompile(fsTypeRegexpString)
 )
+
+type vgReport struct {
+	Report []struct {
+		VG []struct {
+			VGName string `json:"vg_name"`
+			VGFree string `json:"vg_free"`
+		} `json:"vg"`
+	} `json:"report"`
+}
 
 func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
@@ -321,4 +331,36 @@ func pvCount(vgname string) (int, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func VgStats(log *slog.Logger, vgName string) (int64, error) {
+	args := []string{vgName, "--units", "B", "--nosuffix", "--reportformat", "json"}
+	log.Debug("getting stats of vg", "vg-name", vgName, "args", strings.Join(args, " "))
+
+	cmd := exec.Command("vgs", args...) //nolint:gosec
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("unable to get vg stats of %s: %w", vgName, err)
+	}
+
+	pvReport := vgReport{}
+	err = json.Unmarshal(out, &pvReport)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to format vgs output: %w", err)
+	}
+
+	for _, report := range pvReport.Report {
+		for _, vg := range report.VG {
+			if vg.VGName != vgName {
+				continue
+			}
+			free, err := strconv.ParseInt(vg.VGFree, 10, 0)
+			if err != nil {
+				return 0, fmt.Errorf("failed to parse free space for device %s with error: %w", vg.VGName, err)
+			}
+			return free, nil
+		}
+	}
+	return 0, fmt.Errorf("failed to find the free space for device %s", vgName)
 }

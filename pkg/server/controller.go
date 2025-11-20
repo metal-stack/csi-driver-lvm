@@ -9,6 +9,7 @@ import (
 	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
@@ -92,7 +93,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 
 	existsVolume := lvm.LvExists(d.log, d.vgName, req.VolumeId)
 	if !existsVolume {
-		return nil, status.Errorf(codes.FailedPrecondition, "volume does not exist")
+		return &csi.DeleteVolumeResponse{}, nil
 	}
 
 	d.log.Info("getting request to delete volume", "volumeID", req.VolumeId, "node", d.nodeId)
@@ -113,6 +114,13 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 				Type: &csi.ControllerServiceCapability_Rpc{
 					Rpc: &csi.ControllerServiceCapability_RPC{
 						Type: csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
+					},
+				},
+			},
+			{
+				Type: &csi.ControllerServiceCapability_Rpc{
+					Rpc: &csi.ControllerServiceCapability_RPC{
+						Type: csi.ControllerServiceCapability_RPC_GET_CAPACITY,
 					},
 				},
 			},
@@ -145,6 +153,32 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 			Parameters:         req.GetParameters(),
 		},
 	}, nil
+}
+
+func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
+	nodeName := req.GetAccessibleTopology().GetSegments()[topologyKeyNode]
+
+	lvmType := req.GetParameters()["type"]
+	switch lvmType {
+	case "linear", "mirror", "striped":
+		// These are supported lvm types
+	default:
+		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
+	}
+
+	d.log.Info("getting capacity request", "node", nodeName, "lvm-type", lvmType)
+
+	totalBytes, err := lvm.VgStats(d.log, d.vgName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get capacity of vg %s", d.vgName)
+	}
+
+	return &csi.GetCapacityResponse{
+		AvailableCapacity: totalBytes,
+		MaximumVolumeSize: wrapperspb.Int64(totalBytes),
+		MinimumVolumeSize: wrapperspb.Int64(0),
+	}, nil
+
 }
 
 // returns true if the CreateVolume request can be served on this node
