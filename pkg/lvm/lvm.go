@@ -417,7 +417,7 @@ func createProvisionerPod(ctx context.Context, va volumeAction) (err error) {
 			// return ResourceExhausted so the requesting pod can be rescheduled to another node
 			// see https://github.com/kubernetes-csi/external-provisioner/pull/405
 			klog.Info("provisioner pod terminated with failure")
-			return status.Error(codes.ResourceExhausted, "volume creation failed")
+			return status.Error(codes.ResourceExhausted, fmt.Sprintf("volume %s failed", va.action))
 		}
 		if err != nil {
 			klog.Errorf("error reading provisioner pod:%v", err)
