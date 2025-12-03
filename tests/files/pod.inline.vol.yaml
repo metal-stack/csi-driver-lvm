@@ -32,5 +32,5 @@ spec:
       csi:
         driver: lvm.csi.metal-stack.io
         volumeAttributes:
-          size: "100MB"
+          size: "100Mi"
           type: "linear"

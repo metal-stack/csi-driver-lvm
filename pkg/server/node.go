@@ -1,77 +1,26 @@
-/*
-Copyright 2017 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
-package lvm
+package server
 
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
 	"context"
 
 	"github.com/docker/go-units"
+	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"golang.org/x/sys/unix"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/klog/v2"
 )
 
 const topologyKeyNode = "topology.lvm.csi/node"
 
-type nodeServer struct {
-	csi.UnimplementedNodeServer
-	nodeID            string
-	ephemeral         bool
-	maxVolumesPerNode int64
-	devicesPattern    string
-	vgName            string
-}
-
-func newNodeServer(nodeID string, ephemeral bool, maxVolumesPerNode int64, devicesPattern string, vgName string) *nodeServer {
-
-	// revive existing volumes at start of node server
-	vgexists := vgExists(vgName)
-	if !vgexists {
-		klog.Infof("volumegroup: %s not found\n", vgName)
-		vgActivate()
-		// now check again for existing vg again
-	}
-	cmd := exec.Command("lvchange", "-ay", vgName)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		klog.Infof("unable to activate logical volumes:%s %v", out, err)
-	}
-
-	return &nodeServer{
-		nodeID:            nodeID,
-		ephemeral:         ephemeral,
-		maxVolumesPerNode: maxVolumesPerNode,
-		devicesPattern:    devicesPattern,
-		vgName:            vgName,
-	}
-}
-
-func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
-
+func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	// Check arguments
 	if req.GetVolumeCapability() == nil {
 		return nil, status.Error(codes.InvalidArgument, "Volume capability missing in request")
@@ -106,7 +55,7 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 	}
 
 	ephemeralVolume := req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "true" ||
-		req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "" && ns.ephemeral // Kubernetes 1.15 doesn't have csi.storage.k8s.io/ephemeral.
+		req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "" && d.ephemeral // Kubernetes 1.15 doesn't have csi.storage.k8s.io/ephemeral.
 
 	// if ephemeral is specified, create volume here
 	if ephemeralVolume {
@@ -118,49 +67,47 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 		volID := req.GetVolumeId()
 
-		output, err := CreateVG(ns.vgName, ns.devicesPattern)
+		output, err := lvm.CreateVG(d.log, d.vgName, d.devicesPattern)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = CreateLVS(ns.vgName, volID, size, req.GetVolumeContext()["type"], false)
+		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, req.GetVolumeContext()["type"], false)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}
 
-		klog.V(4).Infof("ephemeral mode: created volume: %s, size: %d", volID, size)
+		d.log.Info("ephemeral mode: created volume", "volume", volID, "size", size)
 	}
 
 	if req.GetVolumeCapability().GetBlock() != nil {
 
-		output, err := bindMountLV(req.GetVolumeId(), targetPath, ns.vgName)
+		output, err := lvm.BindMountLV(d.log, req.GetVolumeId(), targetPath, d.vgName)
 		if err != nil {
 			return nil, fmt.Errorf("unable to bind mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
-		klog.Infof("block lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
+		d.log.Info("block lv", "id", req.GetVolumeId(), "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
 
-		output, err := mountLV(req.GetVolumeId(), targetPath, ns.vgName, req.GetVolumeCapability().GetMount().GetFsType())
+		output, err := lvm.MountLV(d.log, req.GetVolumeId(), targetPath, d.vgName, req.GetVolumeCapability().GetMount().GetFsType())
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
-		klog.Infof("mounted lv %s size:%s vg:%s devices:%s created at:%s", req.GetVolumeId(), req.GetVolumeCapability(), ns.vgName, ns.devicesPattern, targetPath)
-
+		d.log.Info("mounted lv", "id", req.GetVolumeId(), "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
 	}
 
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
-func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
+func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
 
-	// TODO
 	// implement deletion of ephemeral volumes
 	volID := req.GetVolumeId()
 
-	klog.Infof("NodeUnpublishRequest: %s", req)
+	d.log.Info("NodeUnpublishRequest", "request", req)
 	// Check arguments
 	if len(volID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
@@ -169,24 +116,22 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
 	}
 
-	umountLV(req.GetTargetPath())
+	lvm.UmountLV(d.log, req.GetTargetPath())
 
 	// ephemeral volumes start with "csi-"
 	if strings.HasPrefix(volID, "csi-") {
 		// remove ephemeral volume here
-		output, err := RemoveLVS(ns.vgName, volID)
+		output, err := lvm.RemoveLVS(d.log, d.vgName, volID)
 		if err != nil {
 			return nil, fmt.Errorf("unable to delete lv: %w output:%s", err, output)
 		}
-		klog.Infof("lv %s vg:%s deleted", volID, ns.vgName)
-
+		d.log.Info("lv deleted", "id", volID, "vg", d.vgName)
 	}
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
-func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
-
+func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
@@ -201,8 +146,7 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
-func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
-
+func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
@@ -214,21 +158,19 @@ func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstag
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
-func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-
+func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	topology := &csi.Topology{
-		Segments: map[string]string{topologyKeyNode: ns.nodeID},
+		Segments: map[string]string{topologyKeyNode: d.nodeId},
 	}
 
 	return &csi.NodeGetInfoResponse{
-		NodeId:             ns.nodeID,
-		MaxVolumesPerNode:  ns.maxVolumesPerNode,
+		NodeId:             d.nodeId,
+		MaxVolumesPerNode:  d.maxVolumesPerNode,
 		AccessibleTopology: topology,
 	}, nil
 }
 
-func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-
+func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: []*csi.NodeServiceCapability{
 			{
@@ -256,7 +198,7 @@ func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetC
 	}, nil
 }
 
-func (ns *nodeServer) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+func (d *Driver) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
 
 	var fs unix.Statfs_t
 
@@ -289,8 +231,7 @@ func (ns *nodeServer) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVol
 	}, nil
 }
 
-func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
-
+func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	// Check arguments
 	if req.GetCapacityRange() == nil {
 		return nil, status.Error(codes.InvalidArgument, "Volume capability missing in request")
@@ -314,11 +255,11 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 	isBlock := false
 	m := info.Mode()
 	if !m.IsDir() {
-		klog.Warning("volume expand request on block device: filesystem resize has to be done externally")
+		d.log.Warn("volume expand request on block device: filesystem resize has to be done externally")
 		isBlock = true
 	}
 
-	output, err := extendLVS(ns.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
+	output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to umount lv: %w output:%s", err, output)
