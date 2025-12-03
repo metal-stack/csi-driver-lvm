@@ -169,7 +169,7 @@ func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (
 		totalBytes = totalBytes / 2
 	}
 
-	d.log.Info("available capacity", "bytes", totalBytes, "lvm-type", lvmType)
+	d.log.Debug("available capacity", "bytes", totalBytes, "lvm-type", lvmType)
 
 	return &csi.GetCapacityResponse{
 		AvailableCapacity: totalBytes,
