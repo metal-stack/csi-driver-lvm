@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
+	"github.com/metal-stack/v"
 	"google.golang.org/grpc"
 )
 
@@ -89,7 +91,9 @@ func (d *Driver) Run(ctx context.Context) {
 		panic(err)
 	}
 
-	server := grpc.NewServer(grpc.ChainUnaryInterceptor(d.requestInterceptorFn))
+	d.log.Info("starting grpc server", "application-version", v.V.String())
+
+	server := grpc.NewServer(grpc.UnaryInterceptor(d.requestInterceptorFn))
 
 	csi.RegisterIdentityServer(server, d)
 	csi.RegisterControllerServer(server, d)
@@ -113,27 +117,18 @@ func (d *Driver) Run(ctx context.Context) {
 func (d *Driver) requestInterceptorFn(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 	var (
 		log   = d.log.With("method", info.FullMethod)
-		debug = d.log.Enabled(ctx, slog.LevelDebug)
 		start = time.Now()
 	)
 
-	if debug {
-		log = log.With("request", req)
-	}
-
-	log.Info("handling unary call")
-
 	response, err := handler(ctx, req)
 
-	if debug && response != nil {
-		log = log.With("response", response)
-	}
+	log.With("duration", time.Since(start).String())
 
 	if err != nil {
 		log.Error("error during unary call", "error", err)
-	} else if debug {
-		log.Debug("handled call successfully", "duration", time.Since(start).String())
+	} else {
+		log.Debug("handled call successfully")
 	}
 
-	return resp, err
+	return response, err
 }
