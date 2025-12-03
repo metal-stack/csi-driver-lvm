@@ -1,6 +1,6 @@
 # csi-driver-lvm #
 
-CSI DRIVER LVM utilizes local storage of Kubernetes nodes to provide persistent storage for pods.
+csi-driver-lvm utilizes local storage of Kubernetes nodes to provide persistent storage for pods.
 
 It automatically creates hostPath based persistent volumes on the nodes.
 
@@ -14,7 +14,7 @@ For the special case of block volumes, the filesystem-expansion has to be perfor
 
 ## Automatic PVC Deletion on Pod Eviction
 
-The persistent volumes created by this CSI driver are strictly node-affine to the node on which the pod was scheduled. This is intentional and prevents pods from starting without the LV data, which resides only on the specific node in the Kubernetes cluster. 
+The persistent volumes created by this CSI driver are strictly node-affine to the node on which the pod was scheduled. This is intentional and prevents pods from starting without the LV data, which resides only on the specific node in the Kubernetes cluster.
 
 Consequently, if a pod is evicted (potentially due to cluster autoscaling or updates to the worker node), the pod may become stuck. In certain scenarios, it's acceptable for the pod to start on another node, despite the potential for data loss. The csi-driver-lvm-controller can capture these events and automatically delete the PVC without requiring manual intervention by an operator.
 
@@ -25,12 +25,14 @@ To use this functionality, the following is needed:
 
 ## Installation ##
 
-**Helm charts for installation are located in a separate repository called [helm-charts](https://github.com/metal-stack/helm-charts). If you would like to contribute to the helm chart, please raise an issue or pull request there.**
+**For convenience, helm charts for installation are synced to a separate repository called [helm-charts](https://github.com/metal-stack/helm-charts). The source for this chart is located in the `charts` folder.**
 
-You have to set the devicePattern for your hardware to specify which disks should be used to create the volume group.
+You have to set the `devicePattern` for your hardware to specify which disks should be used to create the volume group.
 
 ```bash
-helm install --repo https://helm.metal-stack.io mytest csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
+helm install csi-driver-lvm ./charts/csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
+# or alternatively after the a release:
+# helm install --repo https://helm.metal-stack.io csi-driver-lvm csi-driver-lvm --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]'
 ```
 
 Now you can use one of following storageClasses:
