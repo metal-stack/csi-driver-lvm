@@ -1,11 +1,12 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
-	"sync"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
@@ -17,8 +18,6 @@ var (
 )
 
 type Driver struct {
-	sync.Mutex
-
 	csi.UnimplementedNodeServer
 	csi.UnimplementedIdentityServer
 	csi.UnimplementedControllerServer
@@ -33,8 +32,6 @@ type Driver struct {
 	maxVolumesPerNode int64
 	devicesPattern    string
 	vgName            string
-
-	server *grpc.Server
 }
 
 func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string) (*Driver, error) {
@@ -52,6 +49,7 @@ func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWriteP
 	}
 
 	log.Info("ensuring vg setup")
+
 	vgexists := lvm.VgExists(log, vgName)
 	if !vgexists {
 		log.Info("vg not found", "vgName", vgName)
@@ -67,7 +65,7 @@ func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWriteP
 		}
 	}
 
-	log.Info("initializing driver", "name", driverName, "nodeID", nodeId, "endpoint", endpoint, "hostWritePath", hostWritePath, "ephemeral", ephemeral, "maxVolumesPerNode", maxVolumesPerNode, "devicesPattern", devicesPattern, "vgName", vgName)
+	log.Info("initializing driver", "name", driverName, "endpoint", endpoint, "hostWritePath", hostWritePath, "ephemeral", ephemeral, "maxVolumesPerNode", maxVolumesPerNode, "devicesPattern", devicesPattern, "vgName", vgName)
 
 	return &Driver{
 		log:               log,
@@ -83,7 +81,7 @@ func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWriteP
 	}, nil
 }
 
-func (d *Driver) Run() {
+func (d *Driver) Run(ctx context.Context) {
 	_ = os.Remove(d.endpoint)
 
 	listener, err := net.Listen("unix", d.endpoint)
@@ -91,10 +89,51 @@ func (d *Driver) Run() {
 		panic(err)
 	}
 
-	d.server = grpc.NewServer()
-	csi.RegisterIdentityServer(d.server, d)
-	csi.RegisterControllerServer(d.server, d)
-	csi.RegisterNodeServer(d.server, d)
+	server := grpc.NewServer(grpc.ChainUnaryInterceptor(d.requestInterceptorFn))
 
-	_ = d.server.Serve(listener)
+	csi.RegisterIdentityServer(server, d)
+	csi.RegisterControllerServer(server, d)
+	csi.RegisterNodeServer(server, d)
+
+	go func() {
+		if err := server.Serve(listener); err != nil {
+			d.log.Error("error serving grpc, server stopped", "error", err)
+		}
+	}()
+
+	<-ctx.Done()
+
+	d.log.Info("received signal, shutting down the server...")
+
+	server.GracefulStop()
+
+	d.log.Info("server stopped gracefully")
+}
+
+func (d *Driver) requestInterceptorFn(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+	var (
+		log   = d.log.With("method", info.FullMethod)
+		debug = d.log.Enabled(ctx, slog.LevelDebug)
+		start = time.Now()
+	)
+
+	if debug {
+		log = log.With("request", req)
+	}
+
+	log.Info("handling unary call")
+
+	response, err := handler(ctx, req)
+
+	if debug && response != nil {
+		log = log.With("response", response)
+	}
+
+	if err != nil {
+		log.Error("error during unary call", "error", err)
+	} else if debug {
+		log.Debug("handled call successfully", "duration", time.Since(start).String())
+	}
+
+	return resp, err
 }
