@@ -2,7 +2,7 @@
 
 @test "deploy csi-lvm-controller" {
     run kubectl create namespace csi-driver-lvm || true
-    run helm upgrade --debug --install --repo ${HELM_REPO} --namespace csi-driver-lvm csi-driver-lvm csi-driver-lvm --values values.yaml --wait --timeout=120s
+    run helm upgrade --debug --install --namespace csi-driver-lvm csi-driver-lvm /charts/csi-driver-lvm --values values.yaml --wait --timeout=120s
     [ "$status" -eq 0 ]
 
     sleep 5
@@ -32,7 +32,7 @@
             | select(.storageClassName == "csi-driver-lvm-linear")
             | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
             | .capacity
-            | sub("Mi$"; "") 
+            | sub("Mi$"; "")
         ')
     [ -n "$CAP_LINEAR_BEFORE" ]
     echo "$CAP_LINEAR_BEFORE" > /tmp/cap_linear_before.txt
@@ -43,7 +43,7 @@
         | select(.storageClassName == "csi-driver-lvm-mirror")
         | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
         | .capacity
-        | sub("Mi$"; "") 
+        | sub("Mi$"; "")
     ')
     [ -n "$CAP_MIRROR_BEFORE" ]
     echo "$CAP_MIRROR_BEFORE" > /tmp/cap_mirror_before.txt
@@ -73,7 +73,7 @@
                 | select(.storageClassName == "csi-driver-lvm-linear")
                 | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
                 | .capacity
-                | sub("Mi$"; "") 
+                | sub("Mi$"; "")
             ')
 
         if [ "$CAP_LINEAR_AFTER" != "$CAP_LINEAR_BEFORE" ] && [ -n "$CAP_LINEAR_AFTER" ]; then
@@ -97,7 +97,7 @@
                 | select(.storageClassName == "csi-driver-lvm-mirror")
                 | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
                 | .capacity
-                | sub("Mi$"; "") 
+                | sub("Mi$"; "")
             ')
 
         if [ "$CAP_MIRROR_AFTER" != "$CAP_MIRROR_BEFORE" ] && [ -n "$CAP_MIRROR_AFTER" ]; then
@@ -130,7 +130,7 @@
                 | select(.storageClassName == "csi-driver-lvm-linear")
                 | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
                 | .capacity
-                | sub("Mi$"; "") 
+                | sub("Mi$"; "")
             ')
 
         if [ "$CAP_LINEAR_AFTER" == "$CAP_LINEAR_START" ] && [ -n "$CAP_LINEAR_AFTER" ]; then
@@ -154,7 +154,7 @@
                 | select(.storageClassName == "csi-driver-lvm-mirror")
                 | select(.nodeTopology.matchLabels["topology.lvm.csi/node"] == "csi-driver-lvm-worker")
                 | .capacity
-                | sub("Mi$"; "") 
+                | sub("Mi$"; "")
             ')
 
         if [ "$CAP_MIRROR_AFTER" == "$CAP_MIRROR_START" ] && [ -n "$CAP_MIRROR_AFTER" ]; then
@@ -394,7 +394,7 @@
     run kubectl delete pvc --all
     [ "$status" -eq 0 ]
 
-    run kubectl uncordon csi-driver-lvm-worker2 
+    run kubectl uncordon csi-driver-lvm-worker2
     [ "$status" -eq 0 ]
 }
 

@@ -1,0 +1,65 @@
+{{- if .Values.compat03x }}
+---
+{{- $storageClass := .Values.storageClasses.linear -}}
+{{ if $storageClass.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-linear
+{{- if not (empty $storageClass.additionalAnnotations) }}
+  annotations:
+    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
+{{ end }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: {{ $storageClass.reclaimPolicy }}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "linear"
+{{ end }}
+---
+{{- $storageClass := .Values.storageClasses.mirror -}}
+{{ if $storageClass.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-mirror
+{{- if not (empty $storageClass.additionalAnnotations) }}
+  annotations:
+    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
+{{ end }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: {{ $storageClass.reclaimPolicy }}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "mirror"
+{{ end }}
+---
+{{- $storageClass := .Values.storageClasses.striped -}}
+{{ if $storageClass.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-striped
+{{- if not (empty $storageClass.additionalAnnotations) }}
+  annotations:
+    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
+{{ end }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: {{ $storageClass.reclaimPolicy }}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "striped"
+{{ end }}
+{{- end }}

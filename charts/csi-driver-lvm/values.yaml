@@ -1,0 +1,85 @@
+
+lvm:
+  # This one you should change
+  devicePattern: /dev/nvme[0-9]n[0-9]
+
+  # You will want to change this for read-only filesystems
+  # For example, in Talos OS, set this to "/var/etc/lvm"
+  hostWritePath: /etc/lvm
+
+  # these are primariliy for testing purposes
+  vgName: csi-lvm
+  driverName: lvm.csi.metal-stack.io
+  storageClassStub: csi-driver-lvm
+  logLevel: info
+
+rbac:
+  create: true
+  pspEnabled: true
+
+## enable, if you want to install storage classes with v0.3.x backward-compatible `csi-lvm-sc-*` names
+compat03x: false
+
+pluginImage:
+  repository: ghcr.io/metal-stack/csi-driver-lvm
+  tag: latest
+  pullPolicy: IfNotPresent
+
+sidecarImages:
+  attacher: k8s.gcr.io/sig-storage/csi-attacher:v3.5.0
+  livenessprobe: k8s.gcr.io/sig-storage/livenessprobe:v2.7.0
+  provisioner: k8s.gcr.io/sig-storage/csi-provisioner:v3.2.1
+  registrar: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.5.1
+  resizer: k8s.gcr.io/sig-storage/csi-resizer:v1.6.0
+
+kubernetes:
+  kubeletPath: /var/lib/kubelet
+
+storageClasses:
+  linear:
+    enabled: true
+    additionalAnnotations: []
+    # this might be used to mark one of the StorageClasses as default:
+    # storageclass.kubernetes.io/is-default-class: "true"
+    reclaimPolicy: Delete
+  striped:
+    enabled: true
+    additionalAnnotations: []
+    reclaimPolicy: Delete
+  mirror:
+    enabled: true
+    additionalAnnotations: []
+    reclaimPolicy: Delete
+
+nodeSelector:
+  # The plugin daemonset will run on all nodes if it has a toleration,
+  # so it is not necessary to set a nodeSelector for it
+
+  # plugin:
+    # node-role.kubernetes.io/master: ""
+    # Key name may need to be updated to 'node-role.kubernetes.io/control-plane'
+    # in the future
+
+  # The provisioner has an affinity for nodes with a plugin pod,
+  # but since that's a daemonset, we allow more fine-grained node selection
+
+  provisioner:
+    # node-role.kubernetes.io/master: ""
+    # Key name may need to be updated to 'node-role.kubernetes.io/control-plane'
+    # in the future
+
+tolerations:
+  plugin:
+  # - key: node-role.kubernetes.io/master
+  #   operator: Exists
+  #   effect: NoSchedule
+  # - key: node-role.kubernetes.io/control-plane
+  #   operator: Exists
+  #   effect: NoSchedule
+  provisioner:
+  # - key: node-role.kubernetes.io/master
+  #   operator: Exists
+  #   effect: NoSchedule
+  # - key: node-role.kubernetes.io/control-plane
+  #   operator: Exists
+  #   effect: NoSchedule

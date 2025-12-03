@@ -10,7 +10,6 @@ BINARY_CONTROLLER:= $(PLATFORM)/controller
 
 GO111MODULE := on
 KUBECONFIG := $(shell pwd)/.kubeconfig
-HELM_REPO := "https://helm.metal-stack.io/pull_requests/transfer-to-only-daemonset"
 
 SHA := $(shell git rev-parse --short=8 HEAD)
 GITVERSION := $(shell git describe --long --all)
@@ -54,7 +53,7 @@ lvmplugin:
 		-ldflags \
 		"$(LINKMODE)" \
 		-o bin/$(BINARY_LVMPLUGIN) \
-		./cmd/lvmplugin 
+		./cmd/lvmplugin
 	cd bin/ && \
 	sha512sum $(BINARY_LVMPLUGIN) > $(BINARY_LVMPLUGIN).sha512
 
@@ -102,10 +101,10 @@ test: build-plugin build-controller /dev/loop100 /dev/loop101 kind
 	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \
 	docker run -i$(DOCKER_TTY_ARG) \
-		-e HELM_REPO=$(HELM_REPO) \
 		-v "$(KUBECONFIG):/root/.kube/config" \
 		-v "$(PWD)/tests:/code" \
 		-v "$(PWD)/config:/config" \
+		-v "$(PWD)/charts:/charts" \
 		--network host \
 		csi-bats \
 		--verbose-run --trace --timing bats/test.bats ; \
@@ -135,7 +134,7 @@ build-controller: controller
 	docker build -t csi-driver-lvm-controller -f cmd/controller/Dockerfile .
 
 .PHONY: manifests
-manifests: controller-gen 
+manifests: controller-gen
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 deploy: manifests
@@ -143,7 +142,7 @@ deploy: manifests
 	kustomize build config/default | kubectl apply -f -
 
 .PHONY: undeploy
-undeploy: 
+undeploy:
 	kustomize build config/default | kubectl delete -f -
 
 .PHONY: generate
@@ -169,7 +168,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
 	GOOS= GOARCH= GOARM= GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
-.PHONY: setup-envtest 
+.PHONY: setup-envtest
 setup-envtest: $(ENVTEST)
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOOS= GOARCH= GOARM= GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
