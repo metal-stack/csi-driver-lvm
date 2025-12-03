@@ -22,7 +22,7 @@ compat03x: false
 
 pluginImage:
   repository: ghcr.io/metal-stack/csi-driver-lvm
-  tag: v0.7.0
+  tag: latest
   pullPolicy: IfNotPresent
 
 sidecarImages:
