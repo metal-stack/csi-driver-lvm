@@ -7,20 +7,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
+
+	"k8s.io/utils/ptr"
 )
 
 const (
-	linearType         = "linear"
-	stripedType        = "striped"
-	mirrorType         = "mirror"
-	fsTypeRegexpString = `TYPE="(\w+)"`
-)
-
-var (
-	fsTypeRegexp = regexp.MustCompile(fsTypeRegexpString)
+	linearType  = "linear"
+	stripedType = "striped"
+	mirrorType  = "mirror"
 )
 
 type vgReport struct {
@@ -32,6 +28,12 @@ type vgReport struct {
 	} `json:"report"`
 }
 
+type lsblk struct {
+	BlockDevices []struct {
+		FSType *string `json:"fstype"`
+	} `json:"blockdevices"`
+}
+
 func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 
@@ -41,23 +43,30 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 		fsType = "ext4"
 	}
 	// check for already formatted
-	cmd := exec.Command("blkid", lvPath)
+	cmd := exec.Command("lsblk", "-J", "-f", lvPath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Error("unable to check if lv is already formatted", "lv-path", lvPath, "error", err)
+		return "", fmt.Errorf("unable to check if lv %s is already formatted: %w (%s)", lvPath, err, string(out))
 	}
 
-	matches := fsTypeRegexp.FindStringSubmatch(string(out))
-	if len(matches) > 1 {
-		if matches[1] == "xfs_external_log" { // If old xfs signature was found
-			forceFormat = true
-		} else {
-			if matches[1] != fsType {
-				return string(out), fmt.Errorf("target fsType is %s but %s found", fsType, matches[1])
-			}
+	lsblkReport := lsblk{}
+	err = json.Unmarshal(out, &lsblkReport)
 
-			formatted = true
-		}
+	if err != nil {
+		return "", fmt.Errorf("failed to format lsblk output: %w", err)
+	}
+
+	if len(lsblkReport.BlockDevices) != 1 {
+		return "", fmt.Errorf("unexpected amount of blockdevices found for lsblk (%d)", len(lsblkReport.BlockDevices))
+	}
+
+	switch f := lsblkReport.BlockDevices[0].FSType; f {
+	case nil:
+		log.Debug("lv not yet formatted", "lv-path", lvPath)
+	case ptr.To("xfs_external_log"):
+		forceFormat = true
+	default:
+		log.Debug("lv already formatted", "lv-path", lvPath, "format", *f)
 	}
 
 	if !formatted {
@@ -231,8 +240,6 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 		return "", fmt.Errorf("lvmType is incorrect: %s", lvmType)
 	}
 
-	// TODO: check available capacity, fail if request doesn't fit
-
 	args := []string{"-v", "--yes", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
 
 	pvs, err := pvCount(vg)
@@ -290,8 +297,6 @@ func ExtendLVS(log *slog.Logger, vg string, name string, size uint64, isBlock bo
 	if !LvExists(log, vg, name) {
 		return "", fmt.Errorf("logical volume %s does not exist", name)
 	}
-
-	// TODO: check available capacity, fail if request doesn't fit
 
 	args := []string{"-L", fmt.Sprintf("%db", size)}
 	if isBlock {
