@@ -20,6 +20,8 @@ var (
 )
 
 type Driver struct {
+	sync.Mutex
+
 	csi.UnimplementedNodeServer
 	csi.UnimplementedIdentityServer
 	csi.UnimplementedControllerServer
