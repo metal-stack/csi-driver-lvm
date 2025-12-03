@@ -196,7 +196,8 @@
     [ "$status" -eq 0 ]
 
     # in some cases a pod restart is required
-    run kubectl replace --force -f files/pod.linear.vol.yaml --wait --timeout=50s
+    run kubectl replace --force -f files/pod.linear.vol.yaml --wait --timeout=50s --grace-period=0
+    [ "$status" -eq 0 ]
 
     run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.linear.resize.yaml --timeout=30s
     [ "$status" -eq 0 ]
@@ -230,7 +231,8 @@
     [ "$status" -eq 0 ]
 
     # in some cases a pod restart is required
-    run kubectl replace --force -f files/pod.block.vol.yaml --wait --timeout=50s
+    run kubectl replace --force -f files/pod.block.vol.yaml --wait --timeout=50s --grace-period=0
+    [ "$status" -eq 0 ]
 
     run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.block.resize.yaml --timeout=40s
     [ "$status" -eq 0 ]
