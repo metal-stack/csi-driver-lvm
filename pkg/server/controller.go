@@ -13,9 +13,6 @@ import (
 )
 
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	d.log.Debug("received CreateVolume request", "name", req.GetName(), "node", d.nodeId)
-	nodeName := req.GetAccessibilityRequirements().GetPreferred()[0].GetSegments()[topologyKeyNode]
-
 	// Check arguments
 	if len(req.GetName()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "volume name missing in request")
@@ -44,46 +41,44 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	lvmType := req.GetParameters()["type"]
 	switch lvmType {
 	case "linear", "mirror", "striped":
-		// These are supported lvm types
+		// these are supported lvm types
 	default:
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
 
 	integrity, err := strconv.ParseBool(req.GetParameters()["integrity"])
 	if err != nil {
-		d.log.Warn("could not parse 'integrity' request parameter, assuming false", "err", err)
+		d.log.Warn("could not parse 'integrity' request parameter, assuming false", "error", err)
 	}
 
-	volumeContext := req.GetParameters()
-	size := strconv.FormatInt(req.GetCapacityRange().GetRequiredBytes(), 10)
+	d.log.Info("creating volume", "name", req.GetName())
 
-	volumeContext["RequiredBytes"] = size
+	requiredBytes := req.GetCapacityRange().GetRequiredBytes()
 
-	d.log.Info("creating volume", "name", req.GetName(), "node", nodeName)
-
-	_, err = lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(req.GetCapacityRange().GetRequiredBytes()), lvmType, integrity)
+	_, err = lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(requiredBytes), lvmType, integrity)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create lv %s: %w", req.GetName(), err)
 	}
 
-	d.log.Info("successfully created lv", "name", req.GetName(), "node", nodeName)
+	d.log.Info("successfully created lv", "name", req.GetName())
 
-	topology := []*csi.Topology{{
-		Segments: map[string]string{topologyKeyNode: nodeName},
-	}}
+	volumeContext := req.GetParameters()
+	volumeContext["RequiredBytes"] = strconv.FormatInt(requiredBytes, 10)
+
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:           req.GetName(),
-			CapacityBytes:      req.GetCapacityRange().GetRequiredBytes(),
-			VolumeContext:      volumeContext,
-			ContentSource:      req.GetVolumeContentSource(),
-			AccessibleTopology: topology,
+			VolumeId:      req.GetName(),
+			CapacityBytes: requiredBytes,
+			VolumeContext: volumeContext,
+			ContentSource: req.GetVolumeContentSource(),
+			AccessibleTopology: []*csi.Topology{{
+				Segments: map[string]string{topologyKeyNode: d.nodeId},
+			}},
 		},
 	}, nil
 }
 
 func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	d.log.Debug("received DeleteVolume request", "volume", req.GetVolumeId(), "node", d.nodeId)
 	if len(req.GetVolumeId()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "volume id missing in request")
 	}
@@ -93,13 +88,14 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 		return &csi.DeleteVolumeResponse{}, nil
 	}
 
-	d.log.Info("getting request to delete volume", "volumeID", req.VolumeId, "node", d.nodeId)
+	d.log.Info("trying to delete volume", "volume-id", req.VolumeId)
 
 	_, err := lvm.RemoveLVS(d.log, d.vgName, req.VolumeId)
 	if err != nil {
 		return nil, fmt.Errorf("unable to delete volume with id %s: %w", req.VolumeId, err)
 	}
-	d.log.Info("volume successfully deleted", "volumeID", req.VolumeId, "node", d.nodeId)
+
+	d.log.Info("volume successfully deleted", "volume-id", req.VolumeId)
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
@@ -153,9 +149,8 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 }
 
 func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
-	nodeName := req.GetAccessibleTopology().GetSegments()[topologyKeyNode]
-
 	lvmType := req.GetParameters()["type"]
+
 	switch lvmType {
 	case "linear", "mirror", "striped":
 		// These are supported lvm types
@@ -163,24 +158,22 @@ func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
 
-	d.log.Info("getting capacity request", "node", nodeName, "lvm-type", lvmType)
-
 	totalBytes, err := lvm.VgStats(d.log, d.vgName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get capacity of vg %s", d.vgName)
 	}
 
 	// adjust available capacity for mirrored volumes
+	// as we only offer a single mirror we do not need something more specific for calculation
 	if lvmType == "mirror" {
 		totalBytes = totalBytes / 2
 	}
 
-	d.log.Info("available capacity", "bytes", totalBytes, "node", nodeName, "lvm-type", lvmType)
+	d.log.Debug("available capacity", "bytes", totalBytes, "lvm-type", lvmType)
 
 	return &csi.GetCapacityResponse{
 		AvailableCapacity: totalBytes,
 		MaximumVolumeSize: wrapperspb.Int64(totalBytes),
 		MinimumVolumeSize: wrapperspb.Int64(0),
 	}, nil
-
 }

@@ -23,13 +23,13 @@ const topologyKeyNode = "topology.lvm.csi/node"
 func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
 	// Check arguments
 	if req.GetVolumeCapability() == nil {
-		return nil, status.Error(codes.InvalidArgument, "Volume capability missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume capability missing in request")
 	}
 	if len(req.GetVolumeId()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume ID missing in request")
 	}
 	if len(req.GetTargetPath()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
+		return nil, status.Error(codes.InvalidArgument, "target path missing in request")
 	}
 
 	targetPath := req.GetTargetPath()
@@ -59,7 +59,6 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	// if ephemeral is specified, create volume here
 	if ephemeralVolume {
-
 		size, err := parseSize(req.GetVolumeContext()["size"])
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -81,7 +80,6 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	}
 
 	if req.GetVolumeCapability().GetBlock() != nil {
-
 		output, err := lvm.BindMountLV(d.log, req.GetVolumeId(), targetPath, d.vgName)
 		if err != nil {
 			return nil, fmt.Errorf("unable to bind mount lv: %w output:%s", err, output)
@@ -90,7 +88,6 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		d.log.Info("block lv", "id", req.GetVolumeId(), "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
-
 		output, err := lvm.MountLV(d.log, req.GetVolumeId(), targetPath, d.vgName, req.GetVolumeCapability().GetMount().GetFsType())
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
@@ -103,17 +100,15 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 }
 
 func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-
 	// implement deletion of ephemeral volumes
 	volID := req.GetVolumeId()
 
-	d.log.Info("NodeUnpublishRequest", "request", req)
 	// Check arguments
 	if len(volID) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume ID missing in request")
 	}
 	if len(req.GetTargetPath()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
+		return nil, status.Error(codes.InvalidArgument, "target path missing in request")
 	}
 
 	lvm.UmountLV(d.log, req.GetTargetPath())
@@ -134,13 +129,13 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume ID missing in request")
 	}
 	if len(req.GetStagingTargetPath()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
+		return nil, status.Error(codes.InvalidArgument, "target path missing in request")
 	}
 	if req.GetVolumeCapability() == nil {
-		return nil, status.Error(codes.InvalidArgument, "Volume Capability missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume Capability missing in request")
 	}
 
 	return &csi.NodeStageVolumeResponse{}, nil
@@ -149,10 +144,10 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
 	// Check arguments
 	if len(req.GetVolumeId()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume ID missing in request")
 	}
 	if len(req.GetStagingTargetPath()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Target path missing in request")
+		return nil, status.Error(codes.InvalidArgument, "target path missing in request")
 	}
 
 	return &csi.NodeUnstageVolumeResponse{}, nil
@@ -199,7 +194,6 @@ func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabi
 }
 
 func (d *Driver) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-
 	var fs unix.Statfs_t
 
 	err := unix.Statfs(in.GetVolumePath(), &fs)
@@ -234,22 +228,22 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, in *csi.NodeGetVolumeSt
 func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	// Check arguments
 	if req.GetCapacityRange() == nil {
-		return nil, status.Error(codes.InvalidArgument, "Volume capability missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume capability missing in request")
 	}
 	if len(req.GetVolumeId()) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume ID missing in request")
+		return nil, status.Error(codes.InvalidArgument, "volume ID missing in request")
 	}
 	capacity := int64(req.GetCapacityRange().GetRequiredBytes())
 
 	volID := req.GetVolumeId()
 	volPath := req.GetVolumePath()
 	if len(volPath) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "Volume path not provided")
+		return nil, status.Error(codes.InvalidArgument, "volume path not provided")
 	}
 
 	info, err := os.Stat(volPath)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "Could not get file information from %s: %v", volPath, err)
+		return nil, status.Errorf(codes.InvalidArgument, "could not get file information from %s: %v", volPath, err)
 	}
 
 	isBlock := false
@@ -260,7 +254,6 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	}
 
 	output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
-
 	if err != nil {
 		return nil, fmt.Errorf("unable to umount lv: %w output:%s", err, output)
 

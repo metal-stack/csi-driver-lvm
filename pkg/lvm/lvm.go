@@ -223,7 +223,6 @@ func CreateVG(log *slog.Logger, name string, devicesPattern string) (string, err
 // CreateLV creates the new volume
 // used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
 func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType string, integrity bool) (string, error) {
-
 	if LvExists(log, vg, name) {
 		log.Debug("logicalvolume already exists", "name", name)
 		return name, nil
@@ -283,13 +282,17 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 }
 
 func LvExists(log *slog.Logger, vg string, name string) bool {
-	vgname := vg + "/" + name
-	cmd := exec.Command("lvs", vgname, "--noheadings", "-o", "lv_name")
+	var (
+		vgname = vg + "/" + name
+		cmd    = exec.Command("lvs", vgname, "--noheadings", "-o", "lv_name")
+	)
+
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Error("unable to list existing volumes", "error", err)
 		return false
 	}
+
 	return name == strings.TrimSpace(string(out))
 }
 
@@ -305,9 +308,12 @@ func ExtendLVS(log *slog.Logger, vg string, name string, size uint64, isBlock bo
 		args = append(args, "-r")
 	}
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
+
 	log.Debug("lvextend", "args", args)
+
 	cmd := exec.Command("lvextend", args...)
 	out, err := cmd.CombinedOutput()
+
 	return string(out), err
 }
 
@@ -316,11 +322,15 @@ func RemoveLVS(log *slog.Logger, vg string, name string) (string, error) {
 	if !LvExists(log, vg, name) {
 		return fmt.Sprintf("logical volume %s does not exist. Assuming it has already been deleted.", name), nil
 	}
+
 	args := []string{"-q", "-y"}
 	args = append(args, fmt.Sprintf("%s/%s", vg, name))
+
 	log.Debug("lvremove", "args", args)
+
 	cmd := exec.Command("lvremove", args...)
 	out, err := cmd.CombinedOutput()
+
 	return string(out), err
 }
 
@@ -330,11 +340,13 @@ func pvCount(vgname string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
 	outStr := strings.TrimSpace(string(out))
 	count, err := strconv.Atoi(outStr)
 	if err != nil {
 		return 0, err
 	}
+
 	return count, nil
 }
 
@@ -350,7 +362,6 @@ func VgStats(log *slog.Logger, vgName string) (int64, error) {
 
 	pvReport := vgReport{}
 	err = json.Unmarshal(out, &pvReport)
-
 	if err != nil {
 		return 0, fmt.Errorf("failed to format vgs output: %w", err)
 	}
@@ -360,12 +371,15 @@ func VgStats(log *slog.Logger, vgName string) (int64, error) {
 			if vg.VGName != vgName {
 				continue
 			}
+
 			free, err := strconv.ParseInt(vg.VGFree, 10, 0)
 			if err != nil {
 				return 0, fmt.Errorf("failed to parse free space for device %s with error: %w", vg.VGName, err)
 			}
+
 			return free, nil
 		}
 	}
+
 	return 0, fmt.Errorf("failed to find the free space for device %s", vgName)
 }

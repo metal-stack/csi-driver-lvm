@@ -8,14 +8,12 @@ import (
 )
 
 func (d *Driver) GetPluginInfo(ctx context.Context, req *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {
-	d.log.Debug("using default GetPluginInfo")
-
 	if d.name == "" {
-		return nil, status.Error(codes.Unavailable, "Driver name not configured")
+		return nil, status.Error(codes.Unavailable, "driver name not configured")
 	}
 
 	if d.version == "" {
-		return nil, status.Error(codes.Unavailable, "Driver is missing version")
+		return nil, status.Error(codes.Unavailable, "driver is missing version")
 	}
 
 	return &csi.GetPluginInfoResponse{
@@ -29,7 +27,6 @@ func (d *Driver) Probe(ctx context.Context, req *csi.ProbeRequest) (*csi.ProbeRe
 }
 
 func (d *Driver) GetPluginCapabilities(ctx context.Context, req *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
-	d.log.Debug("using default capabilities")
 	return &csi.GetPluginCapabilitiesResponse{
 		Capabilities: []*csi.PluginCapability{
 			{

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path"
 
 	"github.com/metal-stack/csi-driver-lvm/pkg/server"
@@ -47,8 +49,10 @@ func handle() {
 	var lvlvar slog.LevelVar
 	err := lvlvar.UnmarshalText([]byte(*logLevel))
 	if err != nil {
-		panic("not able to determine log-level")
+		slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})).Error("not able to determine log-level", "error", err)
+		os.Exit(1)
 	}
+
 	log := slog.New(
 		slog.NewJSONHandler(
 			os.Stdout,
@@ -56,12 +60,16 @@ func handle() {
 				Level: lvlvar.Level(),
 			},
 		),
-	)
+	).With("node", *nodeID)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
 	driver, err := server.NewDriver(log, *driverName, *nodeID, *endpoint, *hostWritePath, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName)
 	if err != nil {
 		log.Error("failed to initialize driver", "error", err)
 		os.Exit(1)
 	}
-	driver.Run()
+
+	driver.Run(ctx)
 }
