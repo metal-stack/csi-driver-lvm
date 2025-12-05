@@ -327,11 +327,17 @@
 @test "deploy csi-driver-lvm eviction-controller" {
     run kubectl cordon csi-driver-lvm-worker2
     [ "$status" -eq 0 ]
-    run bash -c 'kustomize build /config/default | kubectl apply -f -'
+
+   run helm upgrade --debug --install --namespace csi-driver-lvm csi-driver-lvm /charts/csi-driver-lvm --values values.yaml --set evictionEnabled='true' --wait --timeout=120s
     [ "$status" -eq 0 ]
+
     sleep 5
-    run kubectl wait -n csi-driver-lvm-controller-system --for=condition=ready pod -l app.kubernetes.io/name=csi-driver-lvm-controller --timeout=15s
+    run kubectl rollout status daemonset/csi-driver-lvm -n csi-driver-lvm --timeout=180s
     [ "$status" -eq 0 ]
+
+    run kubectl wait -n csi-driver-lvm --for=condition=ready pod -l app=csi-driver-lvm-controller --timeout=30s
+    [ "$status" -eq 0 ]
+
     run kubectl uncordon csi-driver-lvm-worker2
     [ "$status" -eq 0 ]
 }
@@ -403,10 +409,5 @@
     sleep 10
 
     run helm uninstall --namespace csi-driver-lvm csi-driver-lvm --wait --timeout=30s
-    [ "$status" -eq 0 ]
-}
-
-@test "delete csi-driver-lvm eviction-controller" {
-    run bash -c 'kustomize build /config/default | kubectl delete -f -'
     [ "$status" -eq 0 ]
 }
