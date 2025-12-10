@@ -22,8 +22,12 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "volume capabilities missing in request")
 	}
 
-	// Keep a record of the requested access types.
-	var accessTypeMount, accessTypeBlock bool
+	var (
+		// Keep a record of the requested access types.
+		accessTypeMount, accessTypeBlock bool
+
+		integrity = false
+	)
 
 	for _, cap := range caps {
 		if cap.GetBlock() != nil {
@@ -46,16 +50,19 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
 
-	integrity, err := strconv.ParseBool(req.GetParameters()["integrity"])
-	if err != nil {
-		d.log.Warn("could not parse 'integrity' request parameter, assuming false", "error", err)
+	if value, ok := req.GetParameters()["integrity"]; ok {
+		var err error
+		integrity, err = strconv.ParseBool(value)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse integrity parameter to bool: %w", err)
+		}
 	}
 
 	d.log.Info("creating volume", "name", req.GetName())
 
 	requiredBytes := req.GetCapacityRange().GetRequiredBytes()
 
-	_, err = lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(requiredBytes), lvmType, integrity)
+	_, err := lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(requiredBytes), lvmType, integrity)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create lv %s: %w", req.GetName(), err)
 	}
