@@ -1,4 +1,3 @@
-
 lvm:
   # This one you should change
   devicePattern: /dev/nvme[0-9]n[0-9]
@@ -20,8 +19,15 @@ rbac:
 ## enable, if you want to install storage classes with v0.3.x backward-compatible `csi-lvm-sc-*` names
 compat03x: false
 
+evictionEnabled: false
+
 pluginImage:
   repository: ghcr.io/metal-stack/csi-driver-lvm
+  tag: latest
+  pullPolicy: IfNotPresent
+
+evictionControllerImage:
+  repository: ghcr.io/metal-stack/csi-driver-lvm-controller
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -56,9 +62,9 @@ nodeSelector:
   # so it is not necessary to set a nodeSelector for it
 
   # plugin:
-    # node-role.kubernetes.io/master: ""
-    # Key name may need to be updated to 'node-role.kubernetes.io/control-plane'
-    # in the future
+  # node-role.kubernetes.io/master: ""
+  # Key name may need to be updated to 'node-role.kubernetes.io/control-plane'
+  # in the future
 
   # The provisioner has an affinity for nodes with a plugin pod,
   # but since that's a daemonset, we allow more fine-grained node selection

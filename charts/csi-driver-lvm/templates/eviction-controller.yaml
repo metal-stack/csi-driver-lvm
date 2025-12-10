@@ -1,0 +1,150 @@
+{{- if and .Values.evictionEnabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+      - persistentvolumes
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - storage.k8s.io
+    resources:
+      - storageclasses
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: csi-driver-lvm-controller
+subjects:
+  - kind: ServiceAccount
+    name: csi-driver-lvm-controller
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csi-driver-lvm-controller
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  selector:
+    matchLabels:
+      app: csi-driver-lvm-controller
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: csi-driver-lvm-controller
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - command:
+            - /controller
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+            - --provisioner-name={{ .Values.lvm.driverName }}
+          image: "{{ .Values.evictionControllerImage.repository }}:{{ .Values.evictionControllerImage.tag }}"
+          imagePullPolicy: {{ .Values.evictionControllerImage.pullPolicy }}
+          name: csi-driver-lvm-controller
+          ports: []
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          volumeMounts: []
+      volumes: []
+      serviceAccountName: csi-driver-lvm-controller
+      terminationGracePeriodSeconds: 10
+{{- end }}
