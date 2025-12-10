@@ -80,7 +80,7 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 		cmd = exec.Command(fmt.Sprintf("mkfs.%s", fsType), formatArgs...) //nolint:gosec
 		out, err = cmd.CombinedOutput()
 		if err != nil {
-			return string(out), fmt.Errorf("unable to format lv:%s err:%w", lvname, err)
+			return string(out), fmt.Errorf("unable to format lv %q: %w (%s)", lvname, err, string(out))
 		}
 	}
 
@@ -97,7 +97,7 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 	if err != nil {
 		mountOutput := string(out)
 		if !strings.Contains(mountOutput, "already mounted") {
-			return string(out), fmt.Errorf("unable to mount %s to %s err:%w output:%s", lvPath, mountPath, err, out)
+			return string(out), fmt.Errorf("unable to mount %q to %q: %w (%s)", lvPath, mountPath, err, string(out))
 		}
 	}
 	err = os.Chmod(mountPath, 0777|os.ModeSetgid)
@@ -124,7 +124,7 @@ func BindMountLV(log *slog.Logger, lvname, mountPath string, vgName string) (str
 	if err != nil {
 		mountOutput := string(out)
 		if !strings.Contains(mountOutput, "already mounted") {
-			return string(out), fmt.Errorf("unable to mount %s to %s err:%w output:%s", lvPath, mountPath, err, out)
+			return string(out), fmt.Errorf("unable to mount %q to %s: %w (%s)", lvPath, mountPath, err, string(out))
 		}
 	}
 	err = os.Chmod(mountPath, 0777|os.ModeSetgid)
@@ -140,7 +140,7 @@ func UmountLV(log *slog.Logger, targetPath string) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		//RETURN err ?
-		log.Error("unable to umount", "targetPath", targetPath, "output", out, "error", err)
+		log.Error("unable to umount", "targetPath", targetPath, "output", string(out), "error", err)
 	}
 }
 
@@ -149,7 +149,7 @@ func VgExists(log *slog.Logger, vgname string) bool {
 	cmd := exec.Command("vgs", vgname, "--noheadings", "-o", "vg_name")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Debug("unable to list existing volumegroups", "error", err)
+		log.Debug("unable to list existing volumegroups", "error", err, "output", string(out))
 		return false
 	}
 	return vgname == strings.TrimSpace(string(out))
@@ -157,16 +157,20 @@ func VgExists(log *slog.Logger, vgname string) bool {
 
 // VgActivate execute vgchange -ay to activate all volumes of the volume group
 func VgActivate(log *slog.Logger) {
+	// TODO: this function is kind of best effort and does not return any errors and it's not clear if it worked or not
+	// can we turn this into something idempotent and more concrete?
+
 	// scan for vgs and activate if any
 	cmd := exec.Command("vgscan")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Debug("unable to scan for volumegroups", "output", out, "error", err)
+		log.Debug("unable to scan for volumegroups", "output", string(out), "error", err)
 	}
+
 	cmd = exec.Command("vgchange", "-ay")
 	_, err = cmd.CombinedOutput()
 	if err != nil {
-		log.Debug("unable to activate volumegroups", "output", out, "error", err)
+		log.Debug("unable to activate volumegroups", "output", string(out), "error", err)
 	}
 }
 
@@ -289,7 +293,7 @@ func LvExists(log *slog.Logger, vg string, name string) bool {
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Error("unable to list existing volumes", "error", err)
+		log.Error("unable to list existing volumes", "error", err, "output", string(out))
 		return false
 	}
 
@@ -357,7 +361,7 @@ func VgStats(log *slog.Logger, vgName string) (int64, error) {
 	cmd := exec.Command("vgs", args...) //nolint:gosec
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return 0, fmt.Errorf("unable to get vg stats of %s: %w", vgName, err)
+		return 0, fmt.Errorf("unable to get vg stats of %q: %w (%s)", vgName, err, string(out))
 	}
 
 	pvReport := vgReport{}
