@@ -62,9 +62,9 @@ nodeSelector:
   # so it is not necessary to set a nodeSelector for it
 
   # plugin:
-  # node-role.kubernetes.io/master: ""
-  # Key name may need to be updated to 'node-role.kubernetes.io/control-plane'
-  # in the future
+  #   node-role.kubernetes.io/master: ""
+  #   # Key name may need to be updated to 'node-role.kubernetes.io/control-plane'
+  #   # in the future
 
   # The provisioner has an affinity for nodes with a plugin pod,
   # but since that's a daemonset, we allow more fine-grained node selection
