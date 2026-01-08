@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volume-writing-test
+spec:
+  containers:
+  - name: volume-writing-test
+    image: alpine
+    imagePullPolicy: IfNotPresent
+    command:
+      - /bin/sh
+      - -c
+      - while true; do echo "Happily writing at $(date)" >> /remount/output.log; sync; sleep 1; done
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 10014
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+    volumeMounts:
+    - name: remount
+      mountPath: /remount
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100M
+  volumes:
+  - name: remount
+    persistentVolumeClaim:
+      claimName: lvm-pvc-remount

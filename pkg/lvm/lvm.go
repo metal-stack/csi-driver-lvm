@@ -62,10 +62,13 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 
 	switch f := lsblkReport.BlockDevices[0].FSType; f {
 	case nil:
+		formatted = false
 		log.Debug("lv not yet formatted", "lv-path", lvPath)
 	case ptr.To("xfs_external_log"):
+		formatted = false
 		forceFormat = true
 	default:
+		formatted = true
 		log.Debug("lv already formatted", "lv-path", lvPath, "format", *f)
 	}
 

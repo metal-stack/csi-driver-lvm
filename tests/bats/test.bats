@@ -324,6 +324,47 @@
     [ "$status" -eq 0 ]
 }
 
+@test "write to volume and ensure data gets written" {
+    run kubectl apply -f files/pvc.remount.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.remount.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl apply -f files/pod.remount.vol.writing.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.remount.vol.writing.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+
+    sleep 2
+
+    run kubectl exec -t volume-writing-test -- cat /remount/output.log | grep "Happily writing"
+    [ "$status" -eq 0 ]
+}
+
+@test "remount and ensure that data is still present" {
+    run kubectl delete -f files/pod.remount.vol.writing.yaml --wait --grace-period=0 --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl apply -f files/pod.remount.vol.reading.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.remount.vol.reading.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+
+    sleep 1
+
+    run kubectl logs volume-reading-test | grep "Happily writing"
+    [ "$status" -eq 0 ]
+
+    run kubectl delete -f files/pod.remount.vol.reading.yaml --wait --grace-period=0 --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl delete -f files/pvc.remount.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
 @test "deploy csi-driver-lvm eviction-controller" {
     run kubectl cordon csi-driver-lvm-worker2
     [ "$status" -eq 0 ]
