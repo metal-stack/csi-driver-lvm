@@ -18,8 +18,10 @@ BUILDDATE := $(shell date --iso-8601=seconds)
 VERSION := $(or ${VERSION},$(shell git describe --tags --exact-match 2> /dev/null || git symbolic-ref -q --short HEAD || git rev-parse --short HEAD))
 
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
+KUSTOMIZE_VERSION ?= v5.4.3
 LOCALBIN ?= $(shell pwd)/bin
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 
 $(LOCALBIN):
@@ -87,6 +89,9 @@ kind:
 		  --name csi-driver-lvm \
 			--config tests/kind.yaml \
 			--kubeconfig $(KUBECONFIG); fi
+
+.PHONY: kind-load
+kind-load:
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-controller
 
@@ -96,7 +101,7 @@ rm-kind:
 
 RERUN ?= 1
 .PHONY: test
-test: build-plugin build-controller /dev/loop100 /dev/loop101 kind
+test: build-plugin build-controller /dev/loop100 /dev/loop101 kind kind-load
 	@cd tests && docker build -t csi-bats . && cd -
 	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \
@@ -138,12 +143,12 @@ manifests: controller-gen
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 deploy: manifests
-	cd config/manager && kustomize edit set image controller=csi-driver-lvm-controller
-	kustomize build config/default | kubectl apply -f -
+	cd config/manager && $(KUSTOMIZE) edit set image controller=csi-driver-lvm-controller
+	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
 .PHONY: undeploy
 undeploy:
-	kustomize build config/default | kubectl delete -f -
+	$(KUSTOMIZE) build config/default | kubectl delete -f -
 
 .PHONY: generate
 generate: controller-gen manifests
@@ -172,3 +177,9 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 setup-envtest: $(ENVTEST)
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOOS= GOARCH= GOARM= GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
+.PHONY: kustomize
+kustomize: $(KUSTOMIZE)
+$(KUSTOMIZE): $(LOCALBIN)
+	test -s $(LOCALBIN)/kustomize && $(LOCALBIN)/kustomize | grep -q $(KUSTOMIZE_VERSION) || \
+	GOOS= GOARCH= GOARM= GOBIN=$(LOCALBIN) go install sigs.k8s.io/kustomize/kustomize/v5@$(KUSTOMIZE_VERSION)

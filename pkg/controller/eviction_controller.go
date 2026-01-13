@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -82,6 +83,8 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.Get(ctx, req.NamespacedName, &pod); err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to fetch pod %q: %w", req.NamespacedName, err)
 	}
+
+	spew.Dump(pod.Status.Conditions)
 
 	//on node drain -> pod gets evicted
 	hasDisruptionTarget := hasDisruptionCondition(pod.Status.Conditions)
