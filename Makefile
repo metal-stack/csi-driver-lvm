@@ -17,10 +17,14 @@ GITVERSION := $(shell git describe --long --all)
 BUILDDATE := $(shell date --iso-8601=seconds)
 VERSION := $(or ${VERSION},$(shell git describe --tags --exact-match 2> /dev/null || git symbolic-ref -q --short HEAD || git rev-parse --short HEAD))
 
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
 LOCALBIN ?= $(shell pwd)/bin
+
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+CONTROLLER_TOOLS_VERSION ?= v0.18.0
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
+KUSTOMIZE_VERSION ?= v5.8.0
 ENVTEST ?= $(LOCALBIN)/setup-envtest
+ENVTEST_VERSION ?= release-0.19
 
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
@@ -87,6 +91,9 @@ kind:
 		  --name csi-driver-lvm \
 			--config tests/kind.yaml \
 			--kubeconfig $(KUBECONFIG); fi
+
+.PHONY: kind-load
+kind-load:
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm
 	@kind --name csi-driver-lvm load docker-image csi-driver-lvm-controller
 
@@ -96,7 +103,7 @@ rm-kind:
 
 RERUN ?= 1
 .PHONY: test
-test: build-plugin build-controller /dev/loop100 /dev/loop101 kind
+test: build-plugin build-controller /dev/loop100 /dev/loop101 kind kind-load
 	@cd tests && docker build -t csi-bats . && cd -
 	@touch $(KUBECONFIG)
 	@for i in {1..$(RERUN)}; do \
@@ -137,13 +144,13 @@ build-controller: controller
 manifests: controller-gen
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
-deploy: manifests
-	cd config/manager && kustomize edit set image controller=csi-driver-lvm-controller
-	kustomize build config/default | kubectl apply -f -
+deploy: kustomize manifests
+	cd config/manager && $(KUSTOMIZE) edit set image controller=csi-driver-lvm-controller
+	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
-.PHONY: undeploy
+.PHONY: kustomize undeploy
 undeploy:
-	kustomize build config/default | kubectl delete -f -
+	$(KUSTOMIZE) build config/default | kubectl delete -f -
 
 .PHONY: generate
 generate: controller-gen manifests
@@ -165,10 +172,31 @@ vet:
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN)
 $(CONTROLLER_GEN): $(LOCALBIN)
-	test -s $(LOCALBIN)/controller-gen && $(LOCALBIN)/controller-gen --version | grep -q $(CONTROLLER_TOOLS_VERSION) || \
-	GOOS= GOARCH= GOARM= GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
 .PHONY: setup-envtest
 setup-envtest: $(ENVTEST)
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOOS= GOARCH= GOARM= GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
+
+.PHONY: kustomize
+kustomize: $(KUSTOMIZE)
+$(KUSTOMIZE): $(LOCALBIN)
+	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5,$(KUSTOMIZE_VERSION))
+
+# go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
+# $1 - target path with name of binary
+# $2 - package url which can be installed
+# $3 - specific version of package
+define go-install-tool
+@[ -f "$(1)-$(3)" ] || { \
+set -e; \
+package=$(2)@$(3) ;\
+echo "Downloading $${package}" ;\
+rm -f $(1) || true ;\
+GOBIN=$(LOCALBIN) go install $${package} ;\
+mv $(1) $(1)-$(3) ;\
+} ;\
+ln -sf $(1)-$(3) $(1)
+endef
