@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -84,17 +83,6 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, fmt.Errorf("unable to fetch pod %q: %w", req.NamespacedName, err)
 	}
 
-	spew.Dump(pod.Status.Conditions)
-
-	//on node drain -> pod gets evicted
-	hasDisruptionTarget := hasDisruptionCondition(pod.Status.Conditions)
-	//on missed disruptionTarget
-	isUnscheduled := isUnscheduled(pod.Status.Conditions)
-
-	if !hasDisruptionTarget && !isUnscheduled {
-		return ctrl.Result{}, nil
-	}
-
 	belongs := map[string]bool{}
 	for _, or := range pod.OwnerReferences {
 		if or.Kind != "StatefulSet" {
@@ -156,22 +144,20 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			continue
 		}
 
-		if isUnscheduled {
-			if pv.Spec.NodeAffinity != nil && pv.Spec.NodeAffinity.Required != nil {
-				if len(pv.Spec.NodeAffinity.Required.NodeSelectorTerms) != 1 {
-					return ctrl.Result{}, fmt.Errorf("unexpected node-affinity in pv in csi-driver-lvm managed pv %s", pv.Name)
-				}
+		if pv.Spec.NodeAffinity != nil && pv.Spec.NodeAffinity.Required != nil {
+			if len(pv.Spec.NodeAffinity.Required.NodeSelectorTerms) != 1 {
+				return ctrl.Result{}, fmt.Errorf("unexpected node-affinity in pv in csi-driver-lvm managed pv %s", pv.Name)
+			}
 
-				var node corev1.Node
-				if err := r.Get(ctx, types.NamespacedName{Name: pv.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions[0].Values[0]}, &node); err != nil {
-					return ctrl.Result{}, fmt.Errorf("unable to fetch node %q: %w", pod.Spec.NodeName, err)
-				}
-				if !node.Spec.Unschedulable {
-					continue
-				}
-			} else {
+			var node corev1.Node
+			if err := r.Get(ctx, types.NamespacedName{Name: pv.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions[0].Values[0]}, &node); err != nil {
+				return ctrl.Result{}, fmt.Errorf("unable to fetch node %q: %w", pod.Spec.NodeName, err)
+			}
+			if !node.Spec.Unschedulable {
 				continue
 			}
+		} else {
+			continue
 		}
 
 		r.Log.Info("trying to delete pvc because of eviction",
