@@ -144,19 +144,24 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			continue
 		}
 
-		if pv.Spec.NodeAffinity != nil && pv.Spec.NodeAffinity.Required != nil {
-			if len(pv.Spec.NodeAffinity.Required.NodeSelectorTerms) != 1 {
-				return ctrl.Result{}, fmt.Errorf("unexpected node-affinity in pv in csi-driver-lvm managed pv %s", pv.Name)
-			}
+		if pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
+			// no node affinity on the pv => we do not need to delete anything
+			continue
+		}
 
-			var node corev1.Node
-			if err := r.Get(ctx, types.NamespacedName{Name: pv.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions[0].Values[0]}, &node); err != nil {
-				return ctrl.Result{}, fmt.Errorf("unable to fetch node %q: %w", pod.Spec.NodeName, err)
-			}
-			if !node.Spec.Unschedulable {
-				continue
-			}
-		} else {
+		if len(pv.Spec.NodeAffinity.Required.NodeSelectorTerms) != 1 {
+			return ctrl.Result{}, fmt.Errorf("unexpected node-affinity in pv in csi-driver-lvm managed pv %s", pv.Name)
+		}
+
+		var node corev1.Node
+		err = r.Get(ctx, types.NamespacedName{Name: pv.Spec.NodeAffinity.Required.NodeSelectorTerms[0].MatchExpressions[0].Values[0]}, &node)
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to fetch node %q: %w", pod.Spec.NodeName, err)
+		}
+
+		if err == nil && !node.Spec.Unschedulable {
+			// as long as the node is present and schedulable, we do not need to delete the pvc
+			// this can happen for instance on pod eviction through a pod autoscaler
 			continue
 		}
 
