@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/go-logr/logr"
 	v1alpha1 "github.com/metal-stack/csi-driver-lvm/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -23,6 +25,13 @@ import (
 // +kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=csistoragecapacities,verbs=get;list;watch
+
+const (
+	// DegradedGracePeriod is how long a volume must remain in Degraded phase
+	// before re-replication is triggered. This prevents premature re-replication
+	// during rolling updates where nodes are temporarily NotReady.
+	DegradedGracePeriod = 5 * time.Minute
+)
 
 type DRBDReplicationReconciler struct {
 	client.Client
@@ -82,9 +91,88 @@ func (r *DRBDReplicationReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 
-	// Phase 2: Update phase based on readiness
+	// Phase 2: Handle degraded volumes — check if secondary node is gone and re-replicate
+	if dv.Status.Phase == v1alpha1.VolumePhaseDegraded {
+		// Set DegradedSince if not already set (first time entering this path)
+		if dv.Status.DegradedSince == nil {
+			now := metav1.Now()
+			dv.Status.DegradedSince = &now
+			if err := r.Status().Update(ctx, &dv); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to set degradedSince timestamp: %w", err)
+			}
+			log.Info("recorded degraded timestamp, will wait for grace period before re-replication",
+				"degradedSince", now.Time, "gracePeriod", DegradedGracePeriod)
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		secondaryGone, err := r.isNodeGone(ctx, dv.Spec.SecondaryNode)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to check secondary node status: %w", err)
+		}
+
+		if secondaryGone {
+			// Enforce grace period: only re-replicate after DegradedGracePeriod has elapsed.
+			// This prevents premature re-replication during rolling updates where nodes
+			// are temporarily NotReady while rebooting.
+			elapsed := time.Since(dv.Status.DegradedSince.Time)
+			if elapsed < DegradedGracePeriod {
+				remaining := DegradedGracePeriod - elapsed
+				log.Info("secondary node appears gone but grace period has not elapsed, waiting",
+					"secondary", dv.Spec.SecondaryNode,
+					"degradedSince", dv.Status.DegradedSince.Time,
+					"remaining", remaining,
+				)
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+
+			log.Info("secondary node is gone and grace period elapsed, selecting replacement",
+				"old-secondary", dv.Spec.SecondaryNode,
+				"degradedSince", dv.Status.DegradedSince.Time,
+			)
+
+			newSecondary, err := r.selectSecondaryNode(ctx, dv.Spec.PrimaryNode, dv.Spec.SizeBytes)
+			if err != nil {
+				log.Error(err, "failed to select replacement secondary node")
+				return ctrl.Result{}, err
+			}
+
+			if newSecondary == "" {
+				log.Info("no suitable replacement secondary node found, will retry")
+				return ctrl.Result{Requeue: true}, nil
+			}
+
+			oldSecondary := dv.Spec.SecondaryNode
+			dv.Spec.SecondaryNode = newSecondary
+			if err := r.Update(ctx, &dv); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update drbdvolume with replacement secondary: %w", err)
+			}
+
+			// Reset readiness flags so both sides re-establish DRBD
+			dv.Status.SecondaryReady = false
+			dv.Status.PrimaryReady = false
+			dv.Status.DegradedSince = nil
+			dv.Status.Phase = v1alpha1.VolumePhaseSecondaryAssigned
+			if err := r.Status().Update(ctx, &dv); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update drbdvolume status for re-replication: %w", err)
+			}
+
+			log.Info("assigned replacement secondary node",
+				"old-secondary", oldSecondary,
+				"new-secondary", newSecondary,
+			)
+			return ctrl.Result{}, nil
+		}
+
+		// Secondary node still exists — it may recover on its own.
+		// If it recovers and DRBD reconnects, the volume should transition back to Established.
+		log.Info("secondary node still exists, waiting for it to recover", "secondary", dv.Spec.SecondaryNode)
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
+	// Phase 3: Update phase based on readiness
 	if dv.Status.PrimaryReady && dv.Status.SecondaryReady && dv.Status.Phase != v1alpha1.VolumePhaseEstablished {
 		dv.Status.Phase = v1alpha1.VolumePhaseEstablished
+		dv.Status.DegradedSince = nil
 		if err := r.Status().Update(ctx, &dv); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update drbdvolume status to established: %w", err)
 		}
@@ -92,6 +180,40 @@ func (r *DRBDReplicationReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// isNodeGone returns true if the node does not exist or has been marked unschedulable
+// and has no Ready condition (i.e. it's truly gone, not just cordoned for maintenance).
+func (r *DRBDReplicationReconciler) isNodeGone(ctx context.Context, nodeName string) (bool, error) {
+	var node corev1.Node
+	err := r.Get(ctx, types.NamespacedName{Name: nodeName}, &node)
+	if err != nil {
+		// Node object doesn't exist — it's been removed from the cluster
+		if client.IgnoreNotFound(err) == nil {
+			return true, nil
+		}
+		return false, err
+	}
+
+	// Node exists but check if it's both unschedulable and not Ready
+	// (a cordoned node that's still running should not trigger re-replication)
+	if !node.Spec.Unschedulable {
+		return false, nil
+	}
+
+	for _, cond := range node.Status.Conditions {
+		if cond.Type == corev1.NodeReady {
+			if cond.Status == corev1.ConditionTrue {
+				// Node is cordoned but healthy — don't re-replicate yet
+				return false, nil
+			}
+			// Node is unschedulable and NotReady — consider it gone
+			return true, nil
+		}
+	}
+
+	// No Ready condition found and unschedulable — consider it gone
+	return true, nil
 }
 
 // nodeCapacity holds capacity data for ranking nodes.
@@ -291,7 +413,9 @@ func (r *DRBDReplicationReconciler) HandleFailover(ctx context.Context, dvName s
 		return fmt.Errorf("failed to update drbdvolume spec: %w", err)
 	}
 
+	now := metav1.Now()
 	dv.Status.Phase = v1alpha1.VolumePhaseDegraded
+	dv.Status.DegradedSince = &now
 	if err := r.Status().Update(ctx, &dv); err != nil {
 		return fmt.Errorf("failed to update drbdvolume status: %w", err)
 	}

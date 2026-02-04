@@ -64,7 +64,13 @@ func (a *Agent) reconcile(ctx context.Context, dv *v1alpha1.DRBDVolume) error {
 	isPrimary := dv.Spec.PrimaryNode == a.nodeID
 	isSecondary := dv.Spec.SecondaryNode == a.nodeID
 
+	// If this node is no longer referenced, clean up any stale DRBD resources
 	if !isPrimary && !isSecondary {
+		if drbd.ResourceExists(dv.Spec.VolumeName) {
+			a.log.Info("this node is no longer assigned to drbd volume, cleaning up",
+				"drbdvolume", dv.Name)
+			a.cleanupLocalDRBD(dv.Spec.VolumeName)
+		}
 		return nil
 	}
 
@@ -78,12 +84,54 @@ func (a *Agent) reconcile(ctx context.Context, dv *v1alpha1.DRBDVolume) error {
 		return nil
 	}
 
-	// Check if we already completed our setup
+	// If the readiness flags were reset (re-replication), tear down old config so it's rebuilt
+	if isPrimary && !dv.Status.PrimaryReady && drbd.ResourceExists(dv.Spec.VolumeName) {
+		a.log.Info("primary readiness reset, tearing down old drbd config for rebuild",
+			"drbdvolume", dv.Name)
+		a.cleanupLocalDRBD(dv.Spec.VolumeName)
+	}
+	if isSecondary && !dv.Status.SecondaryReady && drbd.ResourceExists(dv.Spec.VolumeName) {
+		a.log.Info("secondary readiness reset, tearing down old drbd config for rebuild",
+			"drbdvolume", dv.Name)
+		a.cleanupLocalDRBD(dv.Spec.VolumeName)
+	}
+
+	// Check if we already completed our setup.
+	// However, verify that the local state is still intact — a reimaged node
+	// will have lost its LV and DRBD config even though the readiness flag is still true.
 	if isPrimary && dv.Status.PrimaryReady {
-		return nil
+		if lvm.LvExists(a.log, a.vgName, dv.Spec.VolumeName) && drbd.ResourceExists(dv.Spec.VolumeName) {
+			return nil
+		}
+		a.log.Warn("primary marked ready but local state is missing (node may have been reimaged), resetting readiness",
+			"drbdvolume", dv.Name)
+		var fresh v1alpha1.DRBDVolume
+		if err := a.client.Get(ctx, types.NamespacedName{Name: dv.Name}, &fresh); err != nil {
+			return fmt.Errorf("failed to re-fetch drbdvolume: %w", err)
+		}
+		fresh.Status.PrimaryReady = false
+		fresh.Status.Phase = v1alpha1.VolumePhaseSecondaryAssigned
+		if err := a.client.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("failed to reset primary readiness: %w", err)
+		}
+		return nil // Will re-setup on next reconcile
 	}
 	if isSecondary && dv.Status.SecondaryReady {
-		return nil
+		if lvm.LvExists(a.log, a.vgName, dv.Spec.VolumeName) && drbd.ResourceExists(dv.Spec.VolumeName) {
+			return nil
+		}
+		a.log.Warn("secondary marked ready but local state is missing (node may have been reimaged), resetting readiness",
+			"drbdvolume", dv.Name)
+		var fresh v1alpha1.DRBDVolume
+		if err := a.client.Get(ctx, types.NamespacedName{Name: dv.Name}, &fresh); err != nil {
+			return fmt.Errorf("failed to re-fetch drbdvolume: %w", err)
+		}
+		fresh.Status.SecondaryReady = false
+		fresh.Status.Phase = v1alpha1.VolumePhasePrimaryReady
+		if err := a.client.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("failed to reset secondary readiness: %w", err)
+		}
+		return nil // Will re-setup on next reconcile
 	}
 
 	log := a.log.With("drbdvolume", dv.Name, "role", roleString(isPrimary))
@@ -180,6 +228,16 @@ func (a *Agent) reconcile(ctx context.Context, dv *v1alpha1.DRBDVolume) error {
 	}
 
 	return nil
+}
+
+// cleanupLocalDRBD tears down the DRBD resource and removes the config on this node.
+func (a *Agent) cleanupLocalDRBD(volumeName string) {
+	if _, err := drbd.Down(a.log, volumeName); err != nil {
+		a.log.Warn("failed to bring down drbd during cleanup (may already be down)", "error", err)
+	}
+	if err := drbd.RemoveResourceConfig(a.log, volumeName); err != nil {
+		a.log.Warn("failed to remove drbd config during cleanup", "error", err)
+	}
 }
 
 // TeardownDRBD tears down a DRBD resource and removes the LV on this node.

@@ -179,6 +179,59 @@ For detailed status:
 kubectl get drbdvolume pvc-abc -o yaml
 ```
 
+### Re-establishing redundancy after node replacement
+
+After a failover, the `DRBDVolume` enters the `Degraded` phase. The old failed node is listed as the secondary. The DRBD replication controller periodically checks whether the secondary node is truly gone (Node object deleted, or both unschedulable and NotReady).
+
+**Automatic re-replication:** Once the controller confirms the secondary node is gone **and** the grace period (5 minutes) has elapsed, it automatically selects a new secondary using the same least-usage heuristic, resets the DRBD setup, and the node agents establish replication to the replacement node. The volume transitions back through `SecondaryAssigned` → `PrimaryReady` → `SecondaryReady` → `Established`.
+
+```
+Degraded (node-a gone) → SecondaryAssigned (node-c picked) → Established (synced to node-c)
+```
+
+If you replaced the physical machine but reused the same node name, the controller sees the node as healthy and waits for it to recover on its own (DRBD reconnects automatically). If the node name changed, the old Node object must be removed from the cluster for re-replication to trigger:
+
+```bash
+# Remove the old node object so the controller knows it's gone
+kubectl delete node old-node-name
+
+# The controller will automatically select a new secondary
+kubectl get drbdvolumes -w
+```
+
+**What happens on the new secondary:**
+1. The node agent creates a fresh LV
+2. Writes the DRBD resource config pointing to the primary
+3. Initializes DRBD metadata and brings up the resource
+4. DRBD performs a full initial sync from the primary
+
+**What happens on the primary:**
+1. The node agent tears down the old DRBD config (pointing to the dead node)
+2. Writes a new config pointing to the new secondary
+3. Reinitializes and reconnects
+4. DRBD syncs all data to the new secondary
+
+The volume remains fully usable during re-replication. The pod continues running on the primary while the sync happens in the background.
+
+### Rolling Kubernetes cluster updates
+
+DRBD replication is designed to work with rolling cluster updates where nodes are rebooted or reimaged one at a time. Two mechanisms ensure stability:
+
+**Grace period:** When a volume enters the `Degraded` phase, the controller records a `degradedSince` timestamp and waits **5 minutes** before triggering re-replication. This prevents unnecessary data movement when a node is simply rebooting during a rolling update. If the node comes back within the grace period and DRBD reconnects, the volume transitions back to `Established` without any re-replication.
+
+**Reimaged node detection:** If a node is reimaged (OS reinstalled) but keeps the same name, the node agent detects that its local LV and DRBD config are missing even though the readiness flag in the `DRBDVolume` CR is still `true`. It automatically resets the readiness flag, which triggers a rebuild of the DRBD resource on that node.
+
+**Recommended rolling update procedure:**
+
+1. Update nodes one at a time, waiting for each node to become `Ready` before proceeding to the next.
+2. After each node comes back, verify DRBD volumes are `Established`:
+   ```bash
+   kubectl get drbdvolumes
+   ```
+3. Only proceed to the next node once all volumes show `Established` and `Connected`.
+
+This ensures that at any point during the update, at most one side of each DRBD pair is down, and the 5-minute grace period prevents premature re-replication.
+
 ### Raw block replicated volumes
 
 DRBD replication also works with raw block volumes:

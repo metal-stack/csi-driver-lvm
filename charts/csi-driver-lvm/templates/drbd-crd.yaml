@@ -86,4 +86,7 @@ spec:
                   type: boolean
                 secondaryReady:
                   type: boolean
+                degradedSince:
+                  type: string
+                  format: date-time
 {{- end }}

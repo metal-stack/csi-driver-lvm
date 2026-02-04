@@ -11,7 +11,7 @@ func (in *DRBDVolume) DeepCopyInto(out *DRBDVolume) {
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec = in.Spec
-	out.Status = in.Status
+	in.Status.DeepCopyInto(&out.Status)
 }
 
 func (in *DRBDVolume) DeepCopy() *DRBDVolume {
@@ -74,6 +74,10 @@ func (in *DRBDVolumeSpec) DeepCopy() *DRBDVolumeSpec {
 
 func (in *DRBDVolumeStatus) DeepCopyInto(out *DRBDVolumeStatus) {
 	*out = *in
+	if in.DegradedSince != nil {
+		in, out := &in.DegradedSince, &out.DegradedSince
+		*out = (*in).DeepCopy()
+	}
 }
 
 func (in *DRBDVolumeStatus) DeepCopy() *DRBDVolumeStatus {

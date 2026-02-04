@@ -81,6 +81,10 @@ type DRBDVolumeStatus struct {
 	PrimaryReady bool `json:"primaryReady,omitempty"`
 	// SecondaryReady indicates the secondary node has completed DRBD setup.
 	SecondaryReady bool `json:"secondaryReady,omitempty"`
+	// DegradedSince records when the volume first entered the Degraded phase.
+	// Used to implement a grace period before triggering re-replication,
+	// allowing nodes to recover from temporary outages like rolling updates.
+	DegradedSince *metav1.Time `json:"degradedSince,omitempty"`
 }
 
 // +kubebuilder:object:root=true
