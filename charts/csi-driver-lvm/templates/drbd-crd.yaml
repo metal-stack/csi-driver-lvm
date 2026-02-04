@@ -1,0 +1,89 @@
+{{- if .Values.drbd.enabled }}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: drbdvolumes.lvm.csi.metal-stack.io
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  group: lvm.csi.metal-stack.io
+  names:
+    kind: DRBDVolume
+    listKind: DRBDVolumeList
+    plural: drbdvolumes
+    singular: drbdvolume
+    shortNames:
+      - dv
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Primary
+          type: string
+          jsonPath: .spec.primaryNode
+        - name: Secondary
+          type: string
+          jsonPath: .spec.secondaryNode
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Connection
+          type: string
+          jsonPath: .status.connectionState
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                volumeName:
+                  type: string
+                sizeBytes:
+                  type: integer
+                  format: int64
+                primaryNode:
+                  type: string
+                secondaryNode:
+                  type: string
+                vgName:
+                  type: string
+                lvmType:
+                  type: string
+                drbdMinor:
+                  type: integer
+                drbdPort:
+                  type: integer
+                drbdProtocol:
+                  type: string
+              required:
+                - volumeName
+                - sizeBytes
+                - primaryNode
+                - vgName
+                - lvmType
+                - drbdMinor
+                - drbdPort
+                - drbdProtocol
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                connectionState:
+                  type: string
+                primaryDiskState:
+                  type: string
+                secondaryDiskState:
+                  type: string
+                primaryReady:
+                  type: boolean
+                secondaryReady:
+                  type: boolean
+{{- end }}

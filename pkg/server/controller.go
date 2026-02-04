@@ -4,12 +4,26 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
+
+	v1alpha1 "github.com/metal-stack/csi-driver-lvm/api/v1alpha1"
+	"github.com/metal-stack/csi-driver-lvm/pkg/drbd"
+	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// drbdMinorCounter is a simple in-memory counter for assigning DRBD minor numbers.
+// In production, the DRBDReplicationController should manage this via the CRD.
+var (
+	drbdMinorCounter = 100
+	drbdPortCounter  = 7900
 )
 
 func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
@@ -58,7 +72,9 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 	}
 
-	d.log.Info("creating volume", "name", req.GetName())
+	replication := req.GetParameters()["replication"]
+
+	d.log.Info("creating volume", "name", req.GetName(), "replication", replication)
 
 	requiredBytes := req.GetCapacityRange().GetRequiredBytes()
 
@@ -72,17 +88,121 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	volumeContext := req.GetParameters()
 	volumeContext["RequiredBytes"] = strconv.FormatInt(requiredBytes, 10)
 
+	topology := []*csi.Topology{{
+		Segments: map[string]string{topologyKeyNode: d.nodeId},
+	}}
+
+	// Handle DRBD replication
+	if replication == "drbd" && d.k8sClient != nil {
+		dv, err := d.createDRBDVolume(ctx, req.GetName(), requiredBytes, lvmType, req.GetParameters())
+		if err != nil {
+			return nil, fmt.Errorf("unable to create drbd volume: %w", err)
+		}
+
+		// Wait for the secondary to be assigned and DRBD to be set up
+		if err := d.waitForDRBDReady(ctx, dv.Name); err != nil {
+			d.log.Warn("drbd not fully ready yet, volume will be available once replication establishes", "error", err)
+		}
+
+		// If secondary was assigned, include it in the topology
+		var fresh v1alpha1.DRBDVolume
+		if err := d.k8sClient.Get(ctx, types.NamespacedName{Name: dv.Name}, &fresh); err == nil && fresh.Spec.SecondaryNode != "" {
+			topology = append(topology, &csi.Topology{
+				Segments: map[string]string{topologyKeyNode: fresh.Spec.SecondaryNode},
+			})
+		}
+
+		volumeContext["drbdVolume"] = dv.Name
+		volumeContext["drbdMinor"] = strconv.Itoa(dv.Spec.DRBDMinor)
+	}
+
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			VolumeId:      req.GetName(),
-			CapacityBytes: requiredBytes,
-			VolumeContext: volumeContext,
-			ContentSource: req.GetVolumeContentSource(),
-			AccessibleTopology: []*csi.Topology{{
-				Segments: map[string]string{topologyKeyNode: d.nodeId},
-			}},
+			VolumeId:           req.GetName(),
+			CapacityBytes:      requiredBytes,
+			VolumeContext:      volumeContext,
+			ContentSource:      req.GetVolumeContentSource(),
+			AccessibleTopology: topology,
 		},
 	}, nil
+}
+
+func (d *Driver) createDRBDVolume(ctx context.Context, volumeName string, sizeBytes int64, lvmType string, params map[string]string) (*v1alpha1.DRBDVolume, error) {
+	// Check if already exists
+	var existing v1alpha1.DRBDVolume
+	err := d.k8sClient.Get(ctx, types.NamespacedName{Name: volumeName}, &existing)
+	if err == nil {
+		return &existing, nil
+	}
+
+	protocol := params["drbdProtocol"]
+	if protocol == "" {
+		protocol = "C"
+	}
+
+	d.Lock()
+	minor := drbdMinorCounter
+	drbdMinorCounter++
+	port := drbdPortCounter
+	drbdPortCounter++
+	d.Unlock()
+
+	dv := &v1alpha1.DRBDVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: volumeName,
+		},
+		Spec: v1alpha1.DRBDVolumeSpec{
+			VolumeName:   volumeName,
+			SizeBytes:    sizeBytes,
+			PrimaryNode:  d.nodeId,
+			VGName:       d.vgName,
+			LVMType:      lvmType,
+			DRBDMinor:    minor,
+			DRBDPort:     port,
+			DRBDProtocol: protocol,
+		},
+	}
+
+	if err := d.k8sClient.Create(ctx, dv); err != nil {
+		return nil, fmt.Errorf("failed to create DRBDVolume CR: %w", err)
+	}
+
+	dv.Status.Phase = v1alpha1.VolumePhasePending
+	if err := d.k8sClient.Status().Update(ctx, dv); err != nil {
+		d.log.Warn("failed to set initial drbd volume status", "error", err)
+	}
+
+	d.log.Info("created DRBDVolume CR", "name", volumeName, "minor", minor, "port", port)
+	return dv, nil
+}
+
+func (d *Driver) waitForDRBDReady(ctx context.Context, dvName string) error {
+	timeout := 60 * time.Second
+	pollInterval := 2 * time.Second
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		var dv v1alpha1.DRBDVolume
+		if err := d.k8sClient.Get(ctx, types.NamespacedName{Name: dvName}, &dv); err != nil {
+			return err
+		}
+
+		if dv.Status.Phase == v1alpha1.VolumePhaseEstablished {
+			return nil
+		}
+
+		if dv.Status.PrimaryReady && dv.Status.SecondaryReady {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
+
+	return fmt.Errorf("timed out waiting for drbd volume %s to become ready", dvName)
 }
 
 func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
@@ -90,12 +210,42 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "volume id missing in request")
 	}
 
+	d.log.Info("trying to delete volume", "volume-id", req.VolumeId)
+
+	// Tear down DRBD if this is a replicated volume
+	if d.k8sClient != nil {
+		var dv v1alpha1.DRBDVolume
+		err := d.k8sClient.Get(ctx, types.NamespacedName{Name: req.VolumeId}, &dv)
+		if err == nil {
+			d.log.Info("tearing down drbd for volume", "volume-id", req.VolumeId)
+
+			// Mark as deleting
+			dv.Status.Phase = v1alpha1.VolumePhaseDeleting
+			if err := d.k8sClient.Status().Update(ctx, &dv); err != nil {
+				d.log.Warn("failed to update drbd volume phase to deleting", "error", err)
+			}
+
+			// Tear down local DRBD
+			if drbd.ResourceExists(req.VolumeId) {
+				if _, err := drbd.Down(d.log, req.VolumeId); err != nil {
+					d.log.Warn("failed to bring down drbd", "error", err)
+				}
+				if err := drbd.RemoveResourceConfig(d.log, req.VolumeId); err != nil {
+					d.log.Warn("failed to remove drbd config", "error", err)
+				}
+			}
+
+			// Delete the DRBDVolume CR (the secondary node agent will clean up its side)
+			if err := d.k8sClient.Delete(ctx, &dv); client.IgnoreNotFound(err) != nil {
+				d.log.Warn("failed to delete DRBDVolume CR", "error", err)
+			}
+		}
+	}
+
 	existsVolume := lvm.LvExists(d.log, d.vgName, req.VolumeId)
 	if !existsVolume {
 		return &csi.DeleteVolumeResponse{}, nil
 	}
-
-	d.log.Info("trying to delete volume", "volume-id", req.VolumeId)
 
 	_, err := lvm.RemoveLVS(d.log, d.vgName, req.VolumeId)
 	if err != nil {

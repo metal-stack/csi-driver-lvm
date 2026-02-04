@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 
+	v1alpha1 "github.com/metal-stack/csi-driver-lvm/api/v1alpha1"
 	"github.com/metal-stack/csi-driver-lvm/pkg/controller"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
@@ -24,6 +25,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
@@ -35,9 +37,11 @@ func main() {
 		metricsAddr          string
 		enableLeaderElection bool
 		probeAddr            string
+		enableDRBD           bool
 	)
 	flag.StringVar(&provisionerName, "provisioner-name", "lvm.csi.metal-stack.io", "The provisioner name of the csi-driver.")
 	flag.StringVar(&logLevel, "log-level", "info", "The log level of the application.")
+	flag.BoolVar(&enableDRBD, "enable-drbd", false, "Enable the DRBD replication controller.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -79,6 +83,21 @@ func main() {
 	}
 
 	reconciler := controller.New(mgr.GetClient(), mgr.GetScheme(), ctrl.Log.WithName("CsiDriverLvmReconciler"), controller.Config{ProvisionerName: provisionerName})
+
+	if enableDRBD {
+		drbdReconciler := controller.NewDRBDReplicationReconciler(
+			mgr.GetClient(),
+			mgr.GetScheme(),
+			ctrl.Log.WithName("DRBDReplicationReconciler"),
+			provisionerName,
+		)
+		if err := drbdReconciler.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "DRBDReplication")
+			os.Exit(1)
+		}
+		reconciler.SetDRBDReconciler(drbdReconciler)
+		setupLog.Info("drbd replication controller enabled")
+	}
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CsiDriverLvm")

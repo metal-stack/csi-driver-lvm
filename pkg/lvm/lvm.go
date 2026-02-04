@@ -111,6 +111,105 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 	return "", nil
 }
 
+// MountLVByPath mounts a device at the given devicePath (e.g., /dev/drbd100) to mountPath.
+func MountLVByPath(log *slog.Logger, devicePath, mountPath string, fsType string) (string, error) {
+	formatted := false
+	forceFormat := false
+	if fsType == "" {
+		fsType = "ext4"
+	}
+
+	cmd := exec.Command("lsblk", "-J", "-f", devicePath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("unable to check if device %s is already formatted: %w (%s)", devicePath, err, string(out))
+	}
+
+	lsblkReport := lsblk{}
+	err = json.Unmarshal(out, &lsblkReport)
+	if err != nil {
+		return "", fmt.Errorf("failed to format lsblk output: %w", err)
+	}
+
+	if len(lsblkReport.BlockDevices) != 1 {
+		return "", fmt.Errorf("unexpected amount of blockdevices found for lsblk (%d)", len(lsblkReport.BlockDevices))
+	}
+
+	switch f := lsblkReport.BlockDevices[0].FSType; f {
+	case nil:
+		formatted = false
+		log.Debug("device not yet formatted", "device-path", devicePath)
+	case ptr.To("xfs_external_log"):
+		formatted = false
+		forceFormat = true
+	default:
+		formatted = true
+		log.Debug("device already formatted", "device-path", devicePath, "format", *f)
+	}
+
+	if !formatted {
+		formatArgs := []string{}
+		if forceFormat {
+			formatArgs = append(formatArgs, "-f")
+		}
+		formatArgs = append(formatArgs, devicePath)
+
+		log.Debug("formatting with mkfs", "fs-type", fsType, "args", strings.Join(formatArgs, " "))
+		cmd = exec.Command(fmt.Sprintf("mkfs.%s", fsType), formatArgs...) //nolint:gosec
+		out, err = cmd.CombinedOutput()
+		if err != nil {
+			return string(out), fmt.Errorf("unable to format device %q: %w (%s)", devicePath, err, string(out))
+		}
+	}
+
+	err = os.MkdirAll(mountPath, 0777|os.ModeSetgid)
+	if err != nil {
+		return string(out), fmt.Errorf("unable to create mount directory for device %s: %w", devicePath, err)
+	}
+
+	mountArgs := []string{"--make-shared", "-t", fsType, devicePath, mountPath}
+	log.Debug("mounting with mount", "args", strings.Join(mountArgs, " "))
+	cmd = exec.Command("mount", mountArgs...)
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		mountOutput := string(out)
+		if !strings.Contains(mountOutput, "already mounted") {
+			return string(out), fmt.Errorf("unable to mount %q to %q: %w (%s)", devicePath, mountPath, err, string(out))
+		}
+	}
+	err = os.Chmod(mountPath, 0777|os.ModeSetgid)
+	if err != nil {
+		return "", fmt.Errorf("unable to change permissions of volume mount %s: %w", mountPath, err)
+	}
+	log.Debug("mountbypath output", "output", out)
+	return "", nil
+}
+
+// BindMountLVByPath bind-mounts a device at devicePath to mountPath.
+func BindMountLVByPath(log *slog.Logger, devicePath, mountPath string) (string, error) {
+	_, err := os.Create(mountPath)
+	if err != nil {
+		return "", fmt.Errorf("unable to create mount point for device %s: %w", devicePath, err)
+	}
+
+	mountArgs := []string{"--make-shared", "--bind", devicePath, mountPath}
+	log.Debug("bindmountbypath command: mount", "args", strings.Join(mountArgs, " "))
+	cmd := exec.Command("mount", mountArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		mountOutput := string(out)
+		if !strings.Contains(mountOutput, "already mounted") {
+			return string(out), fmt.Errorf("unable to mount %q to %s: %w (%s)", devicePath, mountPath, err, string(out))
+		}
+	}
+	err = os.Chmod(mountPath, 0777|os.ModeSetgid)
+	if err != nil {
+		return "", fmt.Errorf("unable to change permissions of volume mount %s: %w", mountPath, err)
+	}
+	log.Debug("bindmountbypath output", "output", out)
+	return "", nil
+}
+
 func BindMountLV(log *slog.Logger, lvname, mountPath string, vgName string) (string, error) {
 	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
 	_, err := os.Create(mountPath)

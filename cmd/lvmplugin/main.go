@@ -9,7 +9,14 @@ import (
 	"os/signal"
 	"path"
 
+	v1alpha1 "github.com/metal-stack/csi-driver-lvm/api/v1alpha1"
+	"github.com/metal-stack/csi-driver-lvm/pkg/nodeagent"
 	"github.com/metal-stack/csi-driver-lvm/pkg/server"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -23,6 +30,7 @@ var (
 	devicesPattern    = flag.String("devices", "", "comma-separated grok patterns of the physical volumes to use.")
 	vgName            = flag.String("vgname", "csi-lvm", "name of volume group")
 	logLevel          = flag.String("log-level", "info", "log-level of the application")
+	enableDRBD        = flag.Bool("enable-drbd", false, "enable DRBD replication support")
 
 	// Set by the build process
 	version = ""
@@ -65,11 +73,42 @@ func handle() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	driver, err := server.NewDriver(log, *driverName, *nodeID, *endpoint, *hostWritePath, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName)
+	var k8sClient client.Client
+	if *enableDRBD {
+		k8sClient, err = createK8sClient(log)
+		if err != nil {
+			log.Error("failed to create k8s client for drbd support", "error", err)
+			os.Exit(1)
+		}
+		log.Info("drbd support enabled, starting node agent")
+		agent := nodeagent.New(log, k8sClient, *nodeID, *vgName)
+		go agent.Run(ctx)
+	}
+
+	driver, err := server.NewDriver(log, *driverName, *nodeID, *endpoint, *hostWritePath, *ephemeral, *maxVolumesPerNode, version, *devicesPattern, *vgName, k8sClient)
 	if err != nil {
 		log.Error("failed to initialize driver", "error", err)
 		os.Exit(1)
 	}
 
 	driver.Run(ctx)
+}
+
+func createK8sClient(log *slog.Logger) (client.Client, error) {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get in-cluster config: %w", err)
+	}
+
+	c, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create k8s client: %w", err)
+	}
+
+	log.Info("k8s client created for drbd support")
+	return c, nil
 }

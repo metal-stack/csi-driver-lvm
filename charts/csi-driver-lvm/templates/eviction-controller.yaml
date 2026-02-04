@@ -70,6 +70,34 @@ rules:
       - get
       - list
       - watch
+{{- if $.Values.drbd.enabled }}
+  - apiGroups:
+      - lvm.csi.metal-stack.io
+    resources:
+      - drbdvolumes
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+  - apiGroups:
+      - lvm.csi.metal-stack.io
+    resources:
+      - drbdvolumes/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - storage.k8s.io
+    resources:
+      - csistoragecapacities
+    verbs:
+      - get
+      - list
+      - watch
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -115,6 +143,9 @@ spec:
             - --leader-elect
             - --health-probe-bind-address=:8081
             - --provisioner-name={{ .Values.lvm.driverName }}
+{{- if $.Values.drbd.enabled }}
+            - --enable-drbd
+{{- end }}
           image: "{{ .Values.evictionControllerImage.repository }}:{{ .Values.evictionControllerImage.tag }}"
           imagePullPolicy: {{ .Values.evictionControllerImage.pullPolicy }}
           name: csi-driver-lvm-controller

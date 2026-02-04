@@ -9,11 +9,206 @@ Underneath it creates a LVM logical volume on the local disks. A comma-separated
 This CSI driver is derived from [csi-driver-host-path](https://github.com/kubernetes-csi/csi-driver-host-path) and [csi-lvm](https://github.com/metal-stack/csi-lvm)
 
 > [!WARNING]
-> Note that there is always an inevitable risk of data loss when working with local volumes. For this reason, be sure to back up your data or implement proper data replication methods when using this CSI driver.
+> Note that there is always an inevitable risk of data loss when working with non-replicated local volumes. For this reason, be sure to back up your data or enable DRBD replication when using this CSI driver.
 
 ## Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm ##
 
 For the special case of block volumes, the filesystem-expansion has to be performed by the app using the block device
+
+## DRBD Replication
+
+csi-driver-lvm supports optional synchronous replication of volumes to a second node in the cluster using [DRBD](https://linbit.com/drbd/). When enabled, each replicated volume maintains a real-time copy on a standby node. If the primary node fails, the pod and its PVC are automatically failed over to the standby node **without data loss**.
+
+### How it works
+
+```
+  Node A (Primary)                  Node B (Secondary/Standby)
+  ┌─────────────────┐              ┌─────────────────┐
+  │ LV: vol-abc     │──── DRBD ───▶│ LV: vol-abc     │
+  │ /dev/vg/vol-abc │   (sync)     │ /dev/vg/vol-abc │
+  │       │         │              │                  │
+  │  /dev/drbdX     │              │  /dev/drbdX      │
+  │       │         │              │  (Secondary,     │
+  │  mounted by pod │              │   not mounted)   │
+  └─────────────────┘              └─────────────────┘
+```
+
+1. When a PVC is created with the `csi-driver-lvm-replicated` StorageClass, an LV is created on the primary node and a `DRBDVolume` custom resource is created.
+2. The DRBD replication controller selects a secondary node using a **least-usage heuristic** (fewest existing replicas, most available capacity).
+3. The node agents on both nodes create DRBD resource configs, initialize metadata, and establish replication.
+4. The pod mounts the DRBD device (`/dev/drbdN`) instead of the raw LV. All writes are synchronously replicated to the secondary (DRBD protocol C).
+5. On node failure, the eviction controller **promotes the secondary** and updates the PV node affinity instead of deleting the PVC. The pod reschedules to the standby node with its data intact.
+
+### Prerequisites
+
+- The DRBD kernel module (`drbd`) must be loaded on all nodes. Many distributions ship it by default. You can verify with `modprobe drbd`.
+- At least two nodes with the same LVM volume group available.
+- The eviction controller must be enabled for automatic failover.
+
+### Enabling DRBD replication
+
+Enable DRBD support and the replicated StorageClass in the Helm values:
+
+```yaml
+drbd:
+  enabled: true
+  protocol: "C"      # synchronous replication (recommended)
+
+storageClasses:
+  replicated:
+    enabled: true
+    reclaimPolicy: Delete
+
+evictionEnabled: true
+```
+
+Install or upgrade the Helm chart:
+
+```bash
+helm upgrade --install csi-driver-lvm ./charts/csi-driver-lvm \
+  --set lvm.devicePattern='/dev/nvme[0-9]n[0-9]' \
+  --set drbd.enabled=true \
+  --set storageClasses.replicated.enabled=true \
+  --set evictionEnabled=true
+```
+
+This creates the `csi-driver-lvm-replicated` StorageClass and deploys the `DRBDVolume` CRD.
+
+### Using replicated volumes
+
+Create a PVC with the replicated StorageClass:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: csi-pvc-replicated
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: csi-driver-lvm-replicated
+```
+
+Use it in a Pod:
+
+```yaml
+kind: Pod
+apiVersion: v1
+metadata:
+  name: my-csi-app-replicated
+spec:
+  containers:
+    - name: my-frontend
+      image: busybox
+      volumeMounts:
+      - mountPath: "/data"
+        name: my-csi-volume
+      command: [ "sleep", "1000000" ]
+  volumes:
+    - name: my-csi-volume
+      persistentVolumeClaim:
+        claimName: csi-pvc-replicated
+```
+
+### Using replicated volumes with StatefulSets (recommended for failover)
+
+For automatic failover on node failure, use a StatefulSet with `volumeClaimTemplates` and the eviction annotation:
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nginx-replicated
+spec:
+  serviceName: "nginx-replicated"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-replicated
+  template:
+    metadata:
+      labels:
+        app: nginx-replicated
+      annotations:
+        metal-stack.io/csi-driver-lvm.is-eviction-allowed: "true"
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.14.2
+        volumeMounts:
+        - mountPath: "/data"
+          name: data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: csi-driver-lvm-replicated
+      resources:
+        requests:
+          storage: 1Gi
+```
+
+When the primary node goes down or becomes unschedulable, the eviction controller will:
+
+1. Detect the node failure
+2. Promote the DRBD secondary to primary
+3. Update the PV node affinity to point to the new primary
+4. The StatefulSet controller reschedules the pod to the new node with data intact
+
+### Inspecting DRBD volume state
+
+`DRBDVolume` is a cluster-scoped custom resource. You can inspect replication state with:
+
+```bash
+kubectl get drbdvolumes
+```
+
+```
+NAME       PRIMARY   SECONDARY   PHASE         CONNECTION
+pvc-abc    node-a    node-b      Established   Connected
+pvc-def    node-c    node-a      Established   Connected
+```
+
+For detailed status:
+
+```bash
+kubectl get drbdvolume pvc-abc -o yaml
+```
+
+### Raw block replicated volumes
+
+DRBD replication also works with raw block volumes:
+
+```yaml
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-replicated-raw
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-driver-lvm-replicated
+  volumeMode: Block
+  resources:
+    requests:
+      storage: 1Gi
+```
+
+### Configuration reference
+
+| Helm value | Default | Description |
+|------------|---------|-------------|
+| `drbd.enabled` | `false` | Enable DRBD replication support |
+| `drbd.protocol` | `"C"` | DRBD replication protocol. `C` = synchronous (recommended), `B` = memory-synchronous, `A` = asynchronous |
+| `drbd.portRange` | `"7900-7999"` | TCP port range for DRBD replication traffic |
+| `drbd.minorRange` | `"100-999"` | DRBD device minor number range |
+| `storageClasses.replicated.enabled` | `false` | Create the `csi-driver-lvm-replicated` StorageClass |
+| `storageClasses.replicated.reclaimPolicy` | `Delete` | Reclaim policy for replicated volumes |
+| `evictionEnabled` | `false` | Enable the eviction controller (required for automatic failover) |
 
 ## Automatic PVC Deletion on Pod Eviction
 
@@ -43,6 +238,7 @@ Now you can use one of following storageClasses:
 * `csi-driver-lvm-linear`
 * `csi-driver-lvm-mirror`
 * `csi-driver-lvm-striped`
+* `csi-driver-lvm-replicated` (requires `drbd.enabled=true`, see [DRBD Replication](#drbd-replication))
 
 To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclasses, set helm-chart value `compat03x=true`.
 
@@ -58,9 +254,9 @@ If you want to migrate your existing PVC to / from csi-driver-lvm, you can use [
 ### Test ###
 
 ```bash
+# non-replicated volumes
 kubectl apply -f examples/csi-pvc-raw.yaml
 kubectl apply -f examples/csi-pod-raw.yaml
-
 
 kubectl apply -f examples/csi-pvc.yaml
 kubectl apply -f examples/csi-app.yaml
@@ -70,6 +266,23 @@ kubectl delete -f examples/csi-pvc-raw.yaml
 
 kubectl delete -f  examples/csi-app.yaml
 kubectl delete -f examples/csi-pvc.yaml
+
+# replicated volumes (requires drbd.enabled=true)
+kubectl apply -f examples/csi-pvc-replicated.yaml
+kubectl apply -f examples/csi-app-replicated.yaml
+
+kubectl get drbdvolumes
+
+kubectl delete -f examples/csi-app-replicated.yaml
+kubectl delete -f examples/csi-pvc-replicated.yaml
+
+# replicated statefulset with automatic failover
+kubectl apply -f examples/csi-statefulset-replicated.yaml
+
+kubectl get drbdvolumes
+kubectl get pods -o wide
+
+kubectl delete -f examples/csi-statefulset-replicated.yaml
 ```
 
 ### Development ###
