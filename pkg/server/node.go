@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/resource"
+	mountutils "k8s.io/mount-utils"
+	utilexec "k8s.io/utils/exec"
 )
 
 const topologyKeyNode = "topology.lvm.csi/node"
@@ -79,21 +81,33 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		d.log.Info("ephemeral mode: created volume", "volume", volID, "size", size)
 	}
 
+	// Determine the device path: use encrypted mapper device if available, otherwise raw LV
+	volID := req.GetVolumeId()
+	mapperName := lvm.LuksMapperName(volID)
+	devicePath := ""
+	encryptedPath, err := lvm.EncryptedDevicePath(d.log, mapperName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to check encrypted device path: %w", err)
+	}
+	if encryptedPath != "" {
+		devicePath = encryptedPath
+	}
+
 	if req.GetVolumeCapability().GetBlock() != nil {
-		output, err := lvm.BindMountLV(d.log, req.GetVolumeId(), targetPath, d.vgName)
+		output, err := lvm.BindMountLV(d.log, volID, targetPath, d.vgName, devicePath)
 		if err != nil {
 			return nil, fmt.Errorf("unable to bind mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
-		d.log.Info("block lv", "id", req.GetVolumeId(), "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
+		d.log.Info("block lv", "id", volID, "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
-		output, err := lvm.MountLV(d.log, req.GetVolumeId(), targetPath, d.vgName, req.GetVolumeCapability().GetMount().GetFsType())
+		output, err := lvm.MountLV(d.log, volID, targetPath, d.vgName, req.GetVolumeCapability().GetMount().GetFsType(), devicePath)
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}
 		// FIXME: VolumeCapability is a struct and not the size
-		d.log.Info("mounted lv", "id", req.GetVolumeId(), "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
+		d.log.Info("mounted lv", "id", volID, "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
 	}
 
 	return &csi.NodePublishVolumeResponse{}, nil
@@ -138,6 +152,43 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "volume Capability missing in request")
 	}
 
+	volCtx := req.GetVolumeContext()
+	if volCtx["encryption"] == "true" {
+		passphrase, ok := req.GetSecrets()["passphrase"]
+		if !ok || passphrase == "" {
+			return nil, status.Error(codes.InvalidArgument, "encryption enabled but no passphrase provided in secrets")
+		}
+
+		volumeID := req.GetVolumeId()
+		devicePath, err := lvm.LVDevicePath(d.log, d.vgName, volumeID)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to resolve LV device path: %v", err)
+		}
+		mapperName := lvm.LuksMapperName(volumeID)
+
+		// Check if the device is already a LUKS device
+		isLuks, err := lvm.IsLuks(d.log, devicePath)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to check if device is LUKS: %v", err)
+		}
+
+		if !isLuks {
+			d.log.Info("LUKS formatting device", "device", devicePath)
+			if err := lvm.LuksFormat(d.log, devicePath, passphrase); err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to LUKS format device: %v", err)
+			}
+		}
+
+		// Open the LUKS device if not already open
+		if !lvm.LuksStatus(d.log, mapperName) {
+			if err := lvm.LuksOpen(d.log, devicePath, mapperName, passphrase); err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to open LUKS device: %v", err)
+			}
+		}
+
+		d.log.Info("LUKS device staged", "device", devicePath, "mapper", mapperName)
+	}
+
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
@@ -148,6 +199,22 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 	}
 	if len(req.GetStagingTargetPath()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "target path missing in request")
+	}
+
+	volumeID := req.GetVolumeId()
+	mapperName := lvm.LuksMapperName(volumeID)
+
+	// Check if there is an active LUKS device for this volume
+	encryptedPath, err := lvm.EncryptedDevicePath(d.log, mapperName)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to check encrypted device path: %v", err)
+	}
+
+	if encryptedPath != "" {
+		d.log.Info("closing LUKS device", "mapper", mapperName)
+		if err := lvm.LuksClose(d.log, mapperName); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to close LUKS device: %v", err)
+		}
 	}
 
 	return &csi.NodeUnstageVolumeResponse{}, nil
@@ -253,10 +320,37 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		isBlock = true
 	}
 
-	output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
+	// For encrypted volumes, we need to extend the LV without auto-resizing the filesystem,
+	// then resize the LUKS layer, and then resize the filesystem separately.
+	mapperName := lvm.LuksMapperName(volID)
+	encryptedPath, err := lvm.EncryptedDevicePath(d.log, mapperName)
 	if err != nil {
-		return nil, fmt.Errorf("unable to umount lv: %w output:%s", err, output)
+		return nil, fmt.Errorf("unable to check encrypted device path: %w", err)
+	}
 
+	if encryptedPath != "" {
+		// For encrypted volumes: extend LV without filesystem resize, then resize LUKS
+		output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), true) //nolint:gosec
+		if err != nil {
+			return nil, fmt.Errorf("unable to extend lv: %w output:%s", err, output)
+		}
+
+		if err := lvm.LuksResize(d.log, mapperName); err != nil {
+			return nil, fmt.Errorf("unable to resize LUKS device: %w", err)
+		}
+
+		// For block volumes we're done; for filesystem volumes, resize the filesystem on the mapper device
+		if !isBlock {
+			resizer := mountutils.NewResizeFs(utilexec.New())
+			if _, err := resizer.Resize(encryptedPath, volPath); err != nil {
+				return nil, fmt.Errorf("unable to resize filesystem on encrypted device %s: %w", encryptedPath, err)
+			}
+		}
+	} else {
+		output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
+		if err != nil {
+			return nil, fmt.Errorf("unable to extend lv: %w output:%s", err, output)
+		}
 	}
 
 	return &csi.NodeExpandVolumeResponse{

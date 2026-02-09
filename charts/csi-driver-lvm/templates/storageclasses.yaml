@@ -61,3 +61,75 @@ allowVolumeExpansion: true
 parameters:
   type: "striped"
 {{ end }}
+---
+{{- $storageClass := .Values.storageClasses.linearEncrypted -}}
+{{ if $storageClass.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.lvm.storageClassStub }}-linear-encrypted
+{{- if not (empty $storageClass.additionalAnnotations) }}
+  annotations:
+    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
+{{ end }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: {{ $storageClass.reclaimPolicy }}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "linear"
+  encryption: "true"
+  csi.storage.k8s.io/node-stage-secret-name: {{ $storageClass.encryptionSecret.name }}
+  csi.storage.k8s.io/node-stage-secret-namespace: {{ $storageClass.encryptionSecret.namespace }}
+{{ end }}
+---
+{{- $storageClass := .Values.storageClasses.mirrorEncrypted -}}
+{{ if $storageClass.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.lvm.storageClassStub }}-mirror-encrypted
+{{- if not (empty $storageClass.additionalAnnotations) }}
+  annotations:
+    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
+{{ end }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: {{ $storageClass.reclaimPolicy }}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "mirror"
+  encryption: "true"
+  csi.storage.k8s.io/node-stage-secret-name: {{ $storageClass.encryptionSecret.name }}
+  csi.storage.k8s.io/node-stage-secret-namespace: {{ $storageClass.encryptionSecret.namespace }}
+{{ end }}
+---
+{{- $storageClass := .Values.storageClasses.stripedEncrypted -}}
+{{ if $storageClass.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.lvm.storageClassStub }}-striped-encrypted
+{{- if not (empty $storageClass.additionalAnnotations) }}
+  annotations:
+    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
+{{ end }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: {{ $storageClass.reclaimPolicy }}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "striped"
+  encryption: "true"
+  csi.storage.k8s.io/node-stage-secret-name: {{ $storageClass.encryptionSecret.name }}
+  csi.storage.k8s.io/node-stage-secret-namespace: {{ $storageClass.encryptionSecret.namespace }}
+{{ end }}

@@ -56,6 +56,27 @@ storageClasses:
     enabled: true
     additionalAnnotations: []
     reclaimPolicy: Delete
+  linearEncrypted:
+    enabled: true
+    additionalAnnotations: []
+    reclaimPolicy: Delete
+    encryptionSecret:
+      name: csi-lvm-encryption-secret
+      namespace: default
+  stripedEncrypted:
+    enabled: true
+    additionalAnnotations: []
+    reclaimPolicy: Delete
+    encryptionSecret:
+      name: csi-lvm-encryption-secret
+      namespace: default
+  mirrorEncrypted:
+    enabled: true
+    additionalAnnotations: []
+    reclaimPolicy: Delete
+    encryptionSecret:
+      name: csi-lvm-encryption-secret
+      namespace: default
 
 nodeSelector:
   # The plugin daemonset will run on all nodes if it has a toleration,
