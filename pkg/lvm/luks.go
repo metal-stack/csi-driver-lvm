@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 )
 
@@ -26,7 +27,7 @@ func LuksFormat(log *slog.Logger, devicePath, passphrase string) error {
 		"--hash", defaultLuksHash,
 		"--cipher", defaultLuksCipher,
 		"--key-size", defaultLuksKeySize,
-		"--key-file", "/dev/stdin",
+		"--key-file", os.Stdin.Name(),
 		"--pbkdf-memory=65535",
 		"luksFormat", devicePath,
 	}
@@ -99,7 +100,7 @@ func LuksResize(log *slog.Logger, mapperName string) error {
 
 // LuksStatus returns true if the LUKS device with the given mapper name is active.
 func LuksStatus(log *slog.Logger, mapperName string) bool {
-	mapperPath := diskMapperPath + mapperName
+	mapperPath := path.Join(diskMapperPath, mapperName)
 
 	cmd := exec.Command(cryptsetupCmd, "status", mapperPath)
 	out, err := cmd.CombinedOutput()
@@ -143,7 +144,7 @@ func LVDevicePath(log *slog.Logger, vgName, lvName string) (string, error) {
 // EncryptedDevicePath returns the mapper device path if the LUKS device is active,
 // or an empty string if it is not active.
 func EncryptedDevicePath(log *slog.Logger, mapperName string) (string, error) {
-	mapperPath := diskMapperPath + mapperName
+	mapperPath := path.Join(diskMapperPath, mapperName)
 
 	_, err := os.Stat(mapperPath)
 	if os.IsNotExist(err) {

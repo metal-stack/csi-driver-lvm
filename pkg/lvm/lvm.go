@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -37,7 +38,7 @@ type lsblk struct {
 func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType string, devicePath string) (string, error) {
 	lvPath := devicePath
 	if lvPath == "" {
-		lvPath = fmt.Sprintf("/dev/%s/%s", vgName, lvname)
+		lvPath = path.Join("/dev", vgName, lvname)
 	}
 
 	formatted := false
@@ -117,7 +118,7 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 func BindMountLV(log *slog.Logger, lvname, mountPath string, vgName string, devicePath string) (string, error) {
 	lvPath := devicePath
 	if lvPath == "" {
-		lvPath = fmt.Sprintf("/dev/%s/%s", vgName, lvname)
+		lvPath = path.Join("/dev", vgName, lvname)
 	}
 	_, err := os.Create(mountPath)
 	if err != nil {
