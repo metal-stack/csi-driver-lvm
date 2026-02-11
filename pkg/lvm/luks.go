@@ -1,6 +1,7 @@
 package lvm
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -115,7 +116,8 @@ func IsLuks(log *slog.Logger, devicePath string) (bool, error) {
 	cmd := exec.Command(cryptsetupCmd, "isLuks", devicePath)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			if exitErr.ExitCode() == 1 {
 				return false, nil
 			}

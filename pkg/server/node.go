@@ -82,9 +82,11 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	}
 
 	// Determine the device path: use encrypted mapper device if available, otherwise raw LV
-	volID := req.GetVolumeId()
-	mapperName := lvm.LuksMapperName(volID)
-	devicePath := ""
+	var (
+		volID      = req.GetVolumeId()
+		mapperName = lvm.LuksMapperName(volID)
+		devicePath = ""
+	)
 	encryptedPath, err := lvm.EncryptedDevicePath(d.log, mapperName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check encrypted device path: %w", err)
@@ -201,8 +203,10 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 		return nil, status.Error(codes.InvalidArgument, "target path missing in request")
 	}
 
-	volumeID := req.GetVolumeId()
-	mapperName := lvm.LuksMapperName(volumeID)
+	var (
+		volumeID   = req.GetVolumeId()
+		mapperName = lvm.LuksMapperName(volumeID)
+	)
 
 	// Check if there is an active LUKS device for this volume
 	encryptedPath, err := lvm.EncryptedDevicePath(d.log, mapperName)
@@ -322,7 +326,8 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 
 	// For encrypted volumes, we need to extend the LV without auto-resizing the filesystem,
 	// then resize the LUKS layer, and then resize the filesystem separately.
-	mapperName := lvm.LuksMapperName(volID)
+	var mapperName = lvm.LuksMapperName(volID)
+
 	encryptedPath, err := lvm.EncryptedDevicePath(d.log, mapperName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check encrypted device path: %w", err)
