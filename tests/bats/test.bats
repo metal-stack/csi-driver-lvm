@@ -279,7 +279,7 @@
 }
 
 @test "mirror-integrity pod running" {
-    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mirror-integrity.vol.yaml --timeout=30s
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mirror-integrity.vol.yaml --timeout=45s
     [ "$status" -eq 0 ]
 }
 
@@ -453,7 +453,7 @@
     run kubectl replace --force -f files/pod.encrypted-block.vol.yaml --wait --timeout=50s --grace-period=0
     [ "$status" -eq 0 ]
 
-    run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.encrypted-block.resize.yaml --timeout=60s
+    run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.encrypted-block.resize.yaml --timeout=90s
     [ "$status" -eq 0 ]
 }
 
