@@ -48,6 +48,14 @@ rules:
   - apiGroups: ["storage.k8s.io"]
     resources: ["csistoragecapacities"]
     verbs: ["get", "list", "watch", "update", "patch", "create", "delete"]
+{{- if .Values.drbd.enabled }}
+  - apiGroups: ["lvm.csi.metal-stack.io"]
+    resources: ["drbdvolumes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["lvm.csi.metal-stack.io"]
+    resources: ["drbdvolumes/status"]
+    verbs: ["get", "update", "patch"]
+{{- end }}
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -254,6 +262,9 @@ spec:
         - --nodeid=$(KUBE_NODE_NAME)
         - --vgname={{ .Values.lvm.vgName }}
         - --log-level={{ .Values.lvm.logLevel }}
+{{- if .Values.drbd.enabled }}
+        - --enable-drbd
+{{- end }}
         env:
         - name: KUBE_NODE_NAME
           valueFrom:
@@ -308,6 +319,14 @@ spec:
         - mountPath: /run/lock/lvm
           name: lvmlock
           mountPropagation: Bidirectional
+{{- if .Values.drbd.enabled }}
+        - mountPath: /etc/drbd.d
+          name: drbd-config
+          mountPropagation: Bidirectional
+        - mountPath: /var/lib/drbd
+          name: drbd-data
+          mountPropagation: Bidirectional
+{{- end }}
       - name: liveness-probe
         args:
         - --csi-address=/csi/csi.sock
@@ -367,4 +386,14 @@ spec:
           path: {{ .Values.lvm.hostWritePath }}/lock
           type: DirectoryOrCreate
         name: lvmlock
+{{- if .Values.drbd.enabled }}
+      - hostPath:
+          path: /etc/drbd.d
+          type: DirectoryOrCreate
+        name: drbd-config
+      - hostPath:
+          path: /var/lib/drbd
+          type: DirectoryOrCreate
+        name: drbd-data
+{{- end }}
 ---

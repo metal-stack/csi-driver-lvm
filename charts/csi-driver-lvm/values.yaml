@@ -21,6 +21,12 @@ compat03x: false
 
 evictionEnabled: false
 
+drbd:
+  enabled: false
+  portRange: "7900-7999"
+  minorRange: "100-999"
+  protocol: "C"
+
 pluginImage:
   repository: ghcr.io/metal-stack/csi-driver-lvm
   tag: latest
@@ -54,6 +60,10 @@ storageClasses:
     reclaimPolicy: Delete
   mirror:
     enabled: true
+    additionalAnnotations: []
+    reclaimPolicy: Delete
+  replicated:
+    enabled: false
     additionalAnnotations: []
     reclaimPolicy: Delete
 

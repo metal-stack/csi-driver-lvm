@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/go-logr/logr"
+	v1alpha1 "github.com/metal-stack/csi-driver-lvm/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -39,7 +40,8 @@ type CsiDriverLvmReconciler struct {
 	Scheme *runtime.Scheme
 	Log    logr.Logger
 
-	cfg Config
+	cfg             Config
+	drbdReconciler  *DRBDReplicationReconciler
 }
 
 func New(client client.Client, scheme *runtime.Scheme, log logr.Logger, cfg Config) *CsiDriverLvmReconciler {
@@ -49,6 +51,11 @@ func New(client client.Client, scheme *runtime.Scheme, log logr.Logger, cfg Conf
 		Log:    log,
 		cfg:    cfg,
 	}
+}
+
+// SetDRBDReconciler sets the DRBD replication reconciler for failover support.
+func (r *CsiDriverLvmReconciler) SetDRBDReconciler(drbd *DRBDReplicationReconciler) {
+	r.drbdReconciler = drbd
 }
 
 func parseBoolAnn(obj client.Object) (bool, error) {
@@ -163,6 +170,26 @@ func (r *CsiDriverLvmReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			// as long as the node is present and schedulable, we do not need to delete the pvc
 			// this can happen for instance on pod eviction through a pod autoscaler
 			continue
+		}
+
+		// Check if this volume has a DRBD replica — if so, failover instead of deleting PVC
+		if r.drbdReconciler != nil {
+			var dv v1alpha1.DRBDVolume
+			dvErr := r.Get(ctx, types.NamespacedName{Name: pv.Spec.CSI.VolumeHandle}, &dv)
+			if dvErr == nil && dv.Spec.SecondaryNode != "" {
+				r.Log.Info("performing drbd failover instead of pvc deletion",
+					"pvc", pvc.Name, "pod", pod.Name, "volume", dv.Name,
+					"old-primary", dv.Spec.PrimaryNode, "new-primary", dv.Spec.SecondaryNode,
+				)
+
+				if err := r.drbdReconciler.HandleFailover(ctx, dv.Name); err != nil {
+					return ctrl.Result{}, fmt.Errorf("unable to perform drbd failover for %q: %w", dv.Name, err)
+				}
+				r.Log.Info("drbd failover complete, pod will reschedule to new primary",
+					"pvc", pvc.Name, "pod", pod.Name, "new-primary", dv.Spec.SecondaryNode,
+				)
+				continue
+			}
 		}
 
 		r.Log.Info("trying to delete pvc because of eviction",

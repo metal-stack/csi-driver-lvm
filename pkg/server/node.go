@@ -9,6 +9,8 @@ import (
 	"context"
 
 	"github.com/docker/go-units"
+	v1alpha1 "github.com/metal-stack/csi-driver-lvm/api/v1alpha1"
+	"github.com/metal-stack/csi-driver-lvm/pkg/drbd"
 	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"golang.org/x/sys/unix"
 
@@ -16,6 +18,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const topologyKeyNode = "topology.lvm.csi/node"
@@ -79,6 +82,58 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		d.log.Info("ephemeral mode: created volume", "volume", volID, "size", size)
 	}
 
+	// Check if this is a DRBD-replicated volume
+	isDRBD := req.GetVolumeContext()["replication"] == "drbd"
+	drbdMinorStr := req.GetVolumeContext()["drbdMinor"]
+
+	if isDRBD && drbdMinorStr != "" && d.k8sClient != nil {
+		minor, err := strconv.Atoi(drbdMinorStr)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid drbdMinor: %s", drbdMinorStr)
+		}
+
+		// Promote this node to primary for the DRBD resource
+		d.log.Info("promoting drbd resource for volume publish", "volume-id", req.GetVolumeId())
+
+		// Check if we need to force-promote (failover scenario)
+		drbdStatus, err := drbd.GetStatus(d.log, req.GetVolumeId())
+		if err != nil {
+			d.log.Warn("could not get drbd status, attempting force promote", "error", err)
+			if _, err := drbd.ForcePromote(d.log, req.GetVolumeId()); err != nil {
+				return nil, fmt.Errorf("unable to force-promote drbd resource: %w", err)
+			}
+		} else if drbdStatus.Role != "Primary" {
+			if drbdStatus.ConnectionState == "Connected" {
+				if _, err := drbd.Promote(d.log, req.GetVolumeId()); err != nil {
+					return nil, fmt.Errorf("unable to promote drbd resource: %w", err)
+				}
+			} else {
+				if _, err := drbd.ForcePromote(d.log, req.GetVolumeId()); err != nil {
+					return nil, fmt.Errorf("unable to force-promote drbd resource: %w", err)
+				}
+			}
+		}
+
+		// Use the DRBD device path instead of the LV path
+		drbdDev := drbd.DevicePath(minor)
+
+		if req.GetVolumeCapability().GetBlock() != nil {
+			output, err := lvm.BindMountLVByPath(d.log, drbdDev, targetPath)
+			if err != nil {
+				return nil, fmt.Errorf("unable to bind mount drbd device: %w output:%s", err, output)
+			}
+			d.log.Info("block drbd", "id", req.GetVolumeId(), "device", drbdDev, "created at", targetPath)
+		} else if req.GetVolumeCapability().GetMount() != nil {
+			output, err := lvm.MountLVByPath(d.log, drbdDev, targetPath, req.GetVolumeCapability().GetMount().GetFsType())
+			if err != nil {
+				return nil, fmt.Errorf("unable to mount drbd device: %w output:%s", err, output)
+			}
+			d.log.Info("mounted drbd", "id", req.GetVolumeId(), "device", drbdDev, "created at", targetPath)
+		}
+
+		return &csi.NodePublishVolumeResponse{}, nil
+	}
+
 	if req.GetVolumeCapability().GetBlock() != nil {
 		output, err := lvm.BindMountLV(d.log, req.GetVolumeId(), targetPath, d.vgName)
 		if err != nil {
@@ -112,6 +167,17 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	}
 
 	lvm.UmountLV(d.log, req.GetTargetPath())
+
+	// Demote DRBD resource if this is a replicated volume
+	if d.k8sClient != nil {
+		var dv v1alpha1.DRBDVolume
+		if err := d.k8sClient.Get(ctx, types.NamespacedName{Name: volID}, &dv); err == nil {
+			d.log.Info("demoting drbd resource after unpublish", "volume-id", volID)
+			if _, err := drbd.Demote(d.log, volID); err != nil {
+				d.log.Warn("failed to demote drbd resource (may already be secondary)", "error", err)
+			}
+		}
+	}
 
 	// ephemeral volumes start with "csi-"
 	if strings.HasPrefix(volID, "csi-") {

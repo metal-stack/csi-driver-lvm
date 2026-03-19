@@ -13,6 +13,7 @@ import (
 	"github.com/metal-stack/csi-driver-lvm/pkg/lvm"
 	"github.com/metal-stack/v"
 	"google.golang.org/grpc"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -36,9 +37,10 @@ type Driver struct {
 	maxVolumesPerNode int64
 	devicesPattern    string
 	vgName            string
+	k8sClient         client.Client
 }
 
-func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string) (*Driver, error) {
+func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string, k8sClient client.Client) (*Driver, error) {
 	if driverName == "" {
 		return nil, fmt.Errorf("no driver name provided")
 	}
@@ -82,6 +84,7 @@ func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWriteP
 		maxVolumesPerNode: maxVolumesPerNode,
 		devicesPattern:    devicesPattern,
 		vgName:            vgName,
+		k8sClient:         k8sClient,
 	}, nil
 }
 

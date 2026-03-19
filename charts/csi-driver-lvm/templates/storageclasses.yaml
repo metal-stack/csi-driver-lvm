@@ -61,3 +61,26 @@ allowVolumeExpansion: true
 parameters:
   type: "striped"
 {{ end }}
+---
+{{- if and .Values.drbd.enabled .Values.storageClasses.replicated.enabled -}}
+{{- $storageClass := .Values.storageClasses.replicated -}}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.lvm.storageClassStub }}-replicated
+{{- if not (empty $storageClass.additionalAnnotations) }}
+  annotations:
+    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
+{{ end }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+provisioner: {{ .Values.lvm.driverName }}
+reclaimPolicy: {{ $storageClass.reclaimPolicy }}
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "linear"
+  replication: "drbd"
+  drbdProtocol: {{ .Values.drbd.protocol | quote }}
+{{- end }}
