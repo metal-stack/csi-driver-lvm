@@ -7,28 +7,33 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"runtime"
 	"strings"
+
+	"golang.org/x/sys/cpu"
 )
 
 const (
-	cryptsetupCmd      = "cryptsetup"
-	diskMapperPath     = "/dev/mapper/"
-	defaultLuksHash    = "sha256"
-	defaultLuksCipher  = "aes-xts-plain64"
-	defaultLuksKeySize = "256"
-	luksMapperPrefix   = "csi-lvm-"
+	cryptsetupCmd       = "cryptsetup"
+	diskMapperPath      = "/dev/mapper/"
+	defaultLuksType     = "luks2"
+	defaultLuksHash     = "sha256"
+	defaultLuksCipher   = "aes-xts-plain64"
+	defaultLuksKeySize  = "256"
+	defaultPbkdfMemSize = "65535"
+	luksMapperPrefix    = "csi-lvm-"
 )
 
 // LuksFormat formats the device with LUKS2 encryption using the given passphrase.
 func LuksFormat(log *slog.Logger, devicePath, passphrase string) error {
 	args := []string{
 		"-q",
-		"--type=luks2",
+		"--type", defaultLuksType,
 		"--hash", defaultLuksHash,
 		"--cipher", defaultLuksCipher,
 		"--key-size", defaultLuksKeySize,
 		"--key-file", os.Stdin.Name(),
-		"--pbkdf-memory=65535",
+		"--pbkdf-memory", defaultPbkdfMemSize,
 		"luksFormat", devicePath,
 	}
 
@@ -49,7 +54,7 @@ func LuksOpen(log *slog.Logger, devicePath, mapperName, passphrase string) error
 	args := []string{
 		"luksOpen", devicePath, mapperName,
 		"--disable-keyring", // LUKS2 volumes require passphrase on resize if keyring is not disabled on open
-		"--key-file", "/dev/stdin",
+		"--key-file", os.Stdin.Name(),
 		"--perf-same_cpu_crypt",
 		"--perf-submit_from_crypt_cpus",
 		"--perf-no_read_workqueue",
@@ -168,16 +173,14 @@ func LuksMapperName(volumeID string) string {
 
 // IsAESSupported checks if the CPU supports AES instructions.
 func IsAESSupported() bool {
-	data, err := os.ReadFile("/proc/cpuinfo")
-	if err != nil {
+	switch runtime.GOARCH {
+	case "arm64":
+		return cpu.ARM64.HasAES
+	case "amd64":
+		return cpu.X86.HasAES
+	case "arm":
+		return cpu.ARM.HasAES
+	default:
 		return false
 	}
-
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "flags") && strings.Contains(line, " aes") {
-			return true
-		}
-	}
-
-	return false
 }
