@@ -388,6 +388,32 @@
     [[ "$output" == *"ephemeral-encrypted-ok"* ]]
 }
 
+@test "ephemeral encrypted raw LV is LUKS-formatted" {
+    # Ephemeral volume ID: csi-<pod-uid>-<volume-handle>
+    POD_UID=$(kubectl get pod volume-test-inline-encrypted -o jsonpath='{.metadata.uid}')
+    NODE=$(kubectl get pod volume-test-inline-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    # Find the ephemeral LV name (starts with csi- and contains the pod UID)
+    LV_NAME=$(kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- lvs csi-lvm --noheadings -o lv_name | tr -d ' ' | grep "$POD_UID")
+    [ -n "$LV_NAME" ]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- cryptsetup isLuks "/dev/csi-lvm/$LV_NAME"
+    [ "$status" -eq 0 ]
+}
+
+@test "ephemeral encrypted plaintext data not readable on raw LV" {
+    POD_UID=$(kubectl get pod volume-test-inline-encrypted -o jsonpath='{.metadata.uid}')
+    NODE=$(kubectl get pod volume-test-inline-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    LV_NAME=$(kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- lvs csi-lvm --noheadings -o lv_name | tr -d ' ' | grep "$POD_UID")
+    [ -n "$LV_NAME" ]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- strings "/dev/csi-lvm/$LV_NAME"
+    [[ "$output" != *"ephemeral-encrypted-ok"* ]]
+}
+
 @test "delete inline encrypted pod" {
     run kubectl delete -f files/pod.inline.encrypted.vol.yaml --grace-period=0 --wait --timeout=30s
     [ "$status" -eq 0 ]
@@ -414,6 +440,31 @@
 @test "encrypted linear pod running" {
     run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.encrypted-linear.vol.yaml --timeout=60s
     [ "$status" -eq 0 ]
+}
+
+@test "write known data to encrypted linear volume" {
+    run kubectl exec -t volume-test-encrypted -c volume-test-encrypted -- sh -c 'echo "ENCRYPTION_TEST_MARKER" > /encrypted/verify.txt && sync'
+    [ "$status" -eq 0 ]
+}
+
+@test "raw LV is LUKS-formatted" {
+    # Get the PV name (which is also the LV name) and the node it's on
+    PV_NAME=$(kubectl get pvc lvm-pvc-encrypted-linear -o jsonpath='{.spec.volumeName}')
+    NODE=$(kubectl get pod volume-test-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- cryptsetup isLuks "/dev/csi-lvm/$PV_NAME"
+    [ "$status" -eq 0 ]
+}
+
+@test "plaintext data not readable on raw LV" {
+    PV_NAME=$(kubectl get pvc lvm-pvc-encrypted-linear -o jsonpath='{.spec.volumeName}')
+    NODE=$(kubectl get pod volume-test-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    # Search for the known marker string on the raw LV — it must not appear
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- strings "/dev/csi-lvm/$PV_NAME"
+    [[ "$output" != *"ENCRYPTION_TEST_MARKER"* ]]
 }
 
 @test "encrypted linear pvc bound" {
