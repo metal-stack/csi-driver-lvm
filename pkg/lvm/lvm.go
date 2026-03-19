@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -64,7 +62,7 @@ func MountLV(log *slog.Logger, lvname, mountPath string, fsType string, devicePa
 	case nil:
 		formatted = false
 		log.Debug("lv not yet formatted", "lv-path", lvPath)
-	case ptr.To("xfs_external_log"):
+	case new("xfs_external_log"):
 		formatted = false
 		forceFormat = true
 	default:
