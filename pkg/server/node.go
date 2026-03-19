@@ -79,6 +79,31 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		}
 
 		d.log.Info("ephemeral mode: created volume", "volume", volID, "size", size)
+
+		// Handle encryption for ephemeral volumes (which skip NodeStageVolume)
+		if req.GetVolumeContext()["encryption"] == "true" {
+			passphrase, ok := req.GetSecrets()["passphrase"]
+			if !ok || passphrase == "" {
+				return nil, status.Error(codes.InvalidArgument, "encryption enabled but no passphrase provided in secrets")
+			}
+
+			devicePath, err := lvm.LVDevicePath(d.log, d.vgName, volID)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to resolve LV device path: %v", err)
+			}
+			mapperName := lvm.LuksMapperName(volID)
+
+			d.log.Info("ephemeral mode: LUKS formatting device", "device", devicePath)
+			if err := lvm.LuksFormat(d.log, devicePath, passphrase); err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to LUKS format ephemeral device: %v", err)
+			}
+
+			if err := lvm.LuksOpen(d.log, devicePath, mapperName, passphrase); err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to open LUKS ephemeral device: %v", err)
+			}
+
+			d.log.Info("ephemeral mode: LUKS device ready", "device", devicePath, "mapper", mapperName)
+		}
 	}
 
 	// Determine the device path: use encrypted mapper device if available, otherwise raw LV
@@ -131,6 +156,19 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 
 	// ephemeral volumes start with "csi-"
 	if strings.HasPrefix(volID, "csi-") {
+		// Close LUKS device if it was opened for an encrypted ephemeral volume
+		mapperName := lvm.LuksMapperName(volID)
+		encryptedPath, err := lvm.EncryptedDevicePath(d.log, mapperName)
+		if err != nil {
+			return nil, fmt.Errorf("unable to check encrypted device path: %w", err)
+		}
+		if encryptedPath != "" {
+			d.log.Info("closing LUKS device for ephemeral volume", "mapper", mapperName)
+			if err := lvm.LuksClose(d.log, mapperName); err != nil {
+				return nil, fmt.Errorf("unable to close LUKS device: %w", err)
+			}
+		}
+
 		// remove ephemeral volume here
 		output, err := lvm.RemoveLVS(d.log, d.vgName, volID)
 		if err != nil {

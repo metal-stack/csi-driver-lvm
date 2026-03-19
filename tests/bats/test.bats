@@ -372,6 +372,27 @@
     [ "$status" -eq 0 ]
 }
 
+@test "deploy inline encrypted pod with ephemeral volume" {
+    run kubectl apply -f files/pod.inline.encrypted.vol.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "inline encrypted pod running" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.inline.encrypted.vol.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+}
+
+@test "inline encrypted pod can read written data" {
+    run kubectl exec -t volume-test-inline-encrypted -c inline -- cat /data/test.txt
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ephemeral-encrypted-ok"* ]]
+}
+
+@test "delete inline encrypted pod" {
+    run kubectl delete -f files/pod.inline.encrypted.vol.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
 @test "create storageclass linear-encrypted" {
     run kubectl apply -f files/storageclass.linear-encrypted.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]

@@ -74,6 +74,25 @@ kubectl create secret generic csi-lvm-encryption-secret \
 
 Both filesystem and raw block access types are supported with encryption.
 
+### Encrypted Ephemeral Volumes ###
+
+Encryption is also supported for CSI ephemeral (inline) volumes. Since ephemeral volumes bypass `NodeStageVolume`, the LUKS formatting and opening is handled directly during `NodePublishVolume`, and the LUKS device is closed during `NodeUnpublishVolume`.
+
+To use an encrypted ephemeral volume, specify `encryption: "true"` in `volumeAttributes` and reference the encryption secret via `nodePublishSecretRef`:
+
+```yaml
+volumes:
+  - name: encrypted-ephemeral
+    csi:
+      driver: lvm.csi.metal-stack.io
+      volumeAttributes:
+        size: "100Mi"
+        type: "linear"
+        encryption: "true"
+      nodePublishSecretRef:
+        name: csi-lvm-encryption-secret
+```
+
 ## Migration ##
 
 If you want to migrate your existing PVC to / from csi-driver-lvm, you can use [korb](https://github.com/BeryJu/korb).
