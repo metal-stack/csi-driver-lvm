@@ -374,7 +374,12 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		return nil, fmt.Errorf("unable to check encrypted device path: %w", err)
 	}
 
-	if encryptedPath != "" {
+	if encryptedPath == "" {
+		output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
+		if err != nil {
+			return nil, fmt.Errorf("unable to extend lv: %w output:%s", err, output)
+		}
+	} else {
 		// For encrypted volumes: extend LV without filesystem resize, then resize LUKS
 		output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), true) //nolint:gosec
 		if err != nil {
@@ -391,11 +396,6 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 			if _, err := resizer.Resize(encryptedPath, volPath); err != nil {
 				return nil, fmt.Errorf("unable to resize filesystem on encrypted device %s: %w", encryptedPath, err)
 			}
-		}
-	} else {
-		output, err := lvm.ExtendLVS(d.log, d.vgName, volID, uint64(capacity), isBlock) //nolint:gosec
-		if err != nil {
-			return nil, fmt.Errorf("unable to extend lv: %w output:%s", err, output)
 		}
 	}
 
