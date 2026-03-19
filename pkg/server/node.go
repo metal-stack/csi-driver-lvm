@@ -110,8 +110,11 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	var (
 		volID      = req.GetVolumeId()
 		mapperName = lvm.LuksMapperName(volID)
-		devicePath = ""
 	)
+	devicePath, err := lvm.LVDevicePath(d.log, d.vgName, volID)
+	if err != nil {
+		return nil, fmt.Errorf("unable to resolve LV device path: %w", err)
+	}
 	encryptedPath, err := lvm.EncryptedDevicePath(d.log, mapperName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check encrypted device path: %w", err)
@@ -121,7 +124,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	}
 
 	if req.GetVolumeCapability().GetBlock() != nil {
-		output, err := lvm.BindMountLV(d.log, volID, targetPath, d.vgName, devicePath)
+		output, err := lvm.BindMountLV(d.log, volID, targetPath, devicePath)
 		if err != nil {
 			return nil, fmt.Errorf("unable to bind mount lv: %w output:%s", err, output)
 		}
@@ -129,7 +132,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		d.log.Info("block lv", "id", volID, "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
-		output, err := lvm.MountLV(d.log, volID, targetPath, d.vgName, req.GetVolumeCapability().GetMount().GetFsType(), devicePath)
+		output, err := lvm.MountLV(d.log, volID, targetPath, req.GetVolumeCapability().GetMount().GetFsType(), devicePath)
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}
