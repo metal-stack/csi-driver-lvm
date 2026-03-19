@@ -57,21 +57,21 @@ storageClasses:
     additionalAnnotations: []
     reclaimPolicy: Delete
   linearEncrypted:
-    enabled: true
+    enabled: false
     additionalAnnotations: []
     reclaimPolicy: Delete
     encryptionSecret:
       name: csi-lvm-encryption-secret
       namespace: default
   stripedEncrypted:
-    enabled: true
+    enabled: false
     additionalAnnotations: []
     reclaimPolicy: Delete
     encryptionSecret:
       name: csi-lvm-encryption-secret
       namespace: default
   mirrorEncrypted:
-    enabled: true
+    enabled: false
     additionalAnnotations: []
     reclaimPolicy: Delete
     encryptionSecret:

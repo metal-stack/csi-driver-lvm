@@ -62,7 +62,19 @@ kubectl create secret generic csi-lvm-encryption-secret \
   --from-literal=passphrase='my-secret-passphrase'
 ```
 
-2. Create PVCs using one of the encrypted StorageClasses. The encryption is handled transparently by the driver.
+2. Enable the encrypted StorageClasses in your Helm values (they are disabled by default):
+
+```yaml
+storageClasses:
+  linearEncrypted:
+    enabled: true
+  mirrorEncrypted:
+    enabled: true
+  stripedEncrypted:
+    enabled: true
+```
+
+3. Create PVCs using one of the encrypted StorageClasses. The encryption is handled transparently by the driver.
 
 ### How it works ###
 

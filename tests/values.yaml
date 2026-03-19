@@ -12,3 +12,11 @@ provisionerImage:
 lvm:
   devicePattern: /dev/loop100,/dev/loop101
   logLevel: debug
+
+storageClasses:
+  linearEncrypted:
+    enabled: true
+  stripedEncrypted:
+    enabled: true
+  mirrorEncrypted:
+    enabled: true
