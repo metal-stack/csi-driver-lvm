@@ -75,7 +75,7 @@ func LuksOpen(log *slog.Logger, devicePath, mapperName, passphrase string) error
 
 // LuksClose closes the LUKS device with the given mapper name.
 func LuksClose(log *slog.Logger, mapperName string) error {
-	mapperPath := diskMapperPath + mapperName
+	mapperPath := path.Join(diskMapperPath, mapperName)
 
 	log.Info("closing LUKS device", "mapper", mapperPath)
 
@@ -90,7 +90,7 @@ func LuksClose(log *slog.Logger, mapperName string) error {
 
 // LuksResize resizes the LUKS device with the given mapper name.
 func LuksResize(log *slog.Logger, mapperName string) error {
-	mapperPath := diskMapperPath + mapperName
+	mapperPath := path.Join(diskMapperPath, mapperName)
 
 	log.Info("resizing LUKS device", "mapper", mapperPath)
 
