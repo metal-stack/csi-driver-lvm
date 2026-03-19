@@ -308,6 +308,8 @@ spec:
         - mountPath: /run/lock/lvm
           name: lvmlock
           mountPropagation: Bidirectional
+        - mountPath: /run/cryptsetup
+          name: cryptsetup-run
       - name: liveness-probe
         args:
         - --csi-address=/csi/csi.sock
@@ -367,4 +369,7 @@ spec:
           path: {{ .Values.lvm.hostWritePath }}/lock
           type: DirectoryOrCreate
         name: lvmlock
+      - emptyDir:
+          medium: Memory
+        name: cryptsetup-run
 ---

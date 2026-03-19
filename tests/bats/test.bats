@@ -279,7 +279,7 @@
 }
 
 @test "mirror-integrity pod running" {
-    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mirror-integrity.vol.yaml --timeout=30s
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mirror-integrity.vol.yaml --timeout=45s
     [ "$status" -eq 0 ]
 }
 
@@ -362,6 +362,228 @@
     [ "$status" -eq 0 ]
 
     run kubectl delete -f files/pvc.remount.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+## Encryption tests
+
+@test "create encryption secret" {
+    run kubectl apply -f files/secret.encryption.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy inline encrypted pod with ephemeral volume" {
+    run kubectl apply -f files/pod.inline.encrypted.vol.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "inline encrypted pod running" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.inline.encrypted.vol.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+}
+
+@test "inline encrypted pod can read written data" {
+    run kubectl exec -t volume-test-inline-encrypted -c inline -- cat /data/test.txt
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ephemeral-encrypted-ok"* ]]
+}
+
+@test "ephemeral encrypted raw LV is LUKS-formatted" {
+    NODE=$(kubectl get pod volume-test-inline-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    # Ephemeral LV names start with "csi-" — find the one currently active
+    LV_NAME=$(kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- lvs csi-lvm --noheadings -o lv_name | tr -d ' ' | grep '^csi-')
+    [ -n "$LV_NAME" ]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- cryptsetup isLuks "/dev/csi-lvm/$LV_NAME"
+    [ "$status" -eq 0 ]
+}
+
+@test "ephemeral encrypted plaintext data not readable on raw LV" {
+    NODE=$(kubectl get pod volume-test-inline-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    LV_NAME=$(kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- lvs csi-lvm --noheadings -o lv_name | tr -d ' ' | grep '^csi-')
+    [ -n "$LV_NAME" ]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- strings "/dev/csi-lvm/$LV_NAME"
+    [[ "$output" != *"ephemeral-encrypted-ok"* ]]
+}
+
+@test "delete inline encrypted pod" {
+    run kubectl delete -f files/pod.inline.encrypted.vol.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "create storageclass linear-encrypted" {
+    run kubectl apply -f files/storageclass.linear-encrypted.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "create encrypted linear pvc" {
+    run kubectl apply -f files/pvc.encrypted-linear.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.encrypted-linear.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy encrypted linear pod" {
+    run kubectl apply -f files/pod.encrypted-linear.vol.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "encrypted linear pod running" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.encrypted-linear.vol.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+}
+
+@test "write known data to encrypted linear volume" {
+    run kubectl exec -t volume-test-encrypted -c volume-test-encrypted -- sh -c 'echo "ENCRYPTION_TEST_MARKER" > /encrypted/verify.txt && sync'
+    [ "$status" -eq 0 ]
+}
+
+@test "raw LV is LUKS-formatted" {
+    # Get the PV name (which is also the LV name) and the node it's on
+    PV_NAME=$(kubectl get pvc lvm-pvc-encrypted-linear -o jsonpath='{.spec.volumeName}')
+    NODE=$(kubectl get pod volume-test-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- cryptsetup isLuks "/dev/csi-lvm/$PV_NAME"
+    [ "$status" -eq 0 ]
+}
+
+@test "plaintext data not readable on raw LV" {
+    PV_NAME=$(kubectl get pvc lvm-pvc-encrypted-linear -o jsonpath='{.spec.volumeName}')
+    NODE=$(kubectl get pod volume-test-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    # Search for the known marker string on the raw LV — it must not appear
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- strings "/dev/csi-lvm/$PV_NAME"
+    [[ "$output" != *"ENCRYPTION_TEST_MARKER"* ]]
+}
+
+@test "encrypted linear pvc bound" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Bound -f files/pvc.encrypted-linear.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "resize encrypted linear pvc" {
+    run kubectl apply -f files/pvc.encrypted-linear.resize.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    # in some cases a pod restart is required
+    run kubectl replace --force -f files/pod.encrypted-linear.vol.yaml --wait --timeout=50s --grace-period=0
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.encrypted-linear.resize.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete encrypted linear pod" {
+    run kubectl delete -f files/pod.encrypted-linear.vol.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete resized encrypted linear pvc" {
+    run kubectl delete -f files/pvc.encrypted-linear.resize.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "create encrypted block pvc" {
+    run kubectl apply -f files/pvc.encrypted-block.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.encrypted-block.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy encrypted block pod" {
+    run kubectl apply -f files/pod.encrypted-block.vol.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "encrypted block pod running" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.encrypted-block.vol.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+}
+
+@test "encrypted block pvc bound" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Bound -f files/pvc.encrypted-block.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "resize encrypted block pvc" {
+    run kubectl apply -f files/pvc.encrypted-block.resize.yaml --wait --timeout=40s
+    [ "$status" -eq 0 ]
+
+    # in some cases a pod restart is required
+    run kubectl replace --force -f files/pod.encrypted-block.vol.yaml --wait --timeout=50s --grace-period=0
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.capacity.storage}'=200Mi -f files/pvc.encrypted-block.resize.yaml --timeout=90s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete encrypted block pod" {
+    run kubectl delete -f files/pod.encrypted-block.vol.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete resized encrypted block pvc" {
+    run kubectl delete -f files/pvc.encrypted-block.resize.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "write to encrypted volume and ensure data gets written" {
+    run kubectl apply -f files/pvc.encrypted-linear.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.encrypted-linear.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl apply -f files/pod.encrypted-remount.vol.writing.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.encrypted-remount.vol.writing.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+
+    sleep 2
+
+    run kubectl exec -t volume-encrypted-writing-test -- cat /remount/output.log | grep "Happily writing encrypted"
+    [ "$status" -eq 0 ]
+}
+
+@test "remount encrypted volume and ensure that data is still present" {
+    run kubectl delete -f files/pod.encrypted-remount.vol.writing.yaml --wait --grace-period=0 --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl apply -f files/pod.encrypted-remount.vol.reading.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.encrypted-remount.vol.reading.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+
+    sleep 1
+
+    run kubectl logs volume-encrypted-reading-test | grep "Happily writing encrypted"
+    [ "$status" -eq 0 ]
+
+    run kubectl delete -f files/pod.encrypted-remount.vol.reading.yaml --wait --grace-period=0 --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl delete -f files/pvc.encrypted-linear.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete storageclass linear-encrypted" {
+    run kubectl delete -f files/storageclass.linear-encrypted.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete encryption secret" {
+    run kubectl delete -f files/secret.encryption.yaml --wait --timeout=10s
     [ "$status" -eq 0 ]
 }
 

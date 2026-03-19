@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-pvc-encrypted-linear
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-driver-lvm-linear-encrypted
+  resources:
+    requests:
+      storage: 100Mi

@@ -32,8 +32,8 @@ type lsblk struct {
 	} `json:"blockdevices"`
 }
 
-func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType string) (string, error) {
-	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
+func MountLV(log *slog.Logger, lvname, mountPath string, fsType string, devicePath string) (string, error) {
+	lvPath := devicePath
 
 	formatted := false
 	forceFormat := false
@@ -109,8 +109,8 @@ func MountLV(log *slog.Logger, lvname, mountPath string, vgName string, fsType s
 	return "", nil
 }
 
-func BindMountLV(log *slog.Logger, lvname, mountPath string, vgName string) (string, error) {
-	lvPath := fmt.Sprintf("/dev/%s/%s", vgName, lvname)
+func BindMountLV(log *slog.Logger, lvname, mountPath string, devicePath string) (string, error) {
+	lvPath := devicePath
 	_, err := os.Create(mountPath)
 	if err != nil {
 		return "", fmt.Errorf("unable to create mount directory for lv:%s err:%w", lvname, err)

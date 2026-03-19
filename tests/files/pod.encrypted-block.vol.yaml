@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volume-test-encrypted-block
+spec:
+  containers:
+  - name: volume-test-encrypted-block
+    image: alpine
+    imagePullPolicy: IfNotPresent
+    command:
+      - tail
+      - -f
+      - /etc/hosts
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 10014
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+    volumeDevices:
+      - name: encrypted-block
+        devicePath: /dev/xvda
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100M
+  volumes:
+  - name: encrypted-block
+    persistentVolumeClaim:
+      claimName: lvm-pvc-encrypted-block

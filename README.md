@@ -43,8 +43,67 @@ Now you can use one of following storageClasses:
 * `csi-driver-lvm-linear`
 * `csi-driver-lvm-mirror`
 * `csi-driver-lvm-striped`
+* `csi-driver-lvm-linear-encrypted`
+* `csi-driver-lvm-mirror-encrypted`
+* `csi-driver-lvm-striped-encrypted`
 
 To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclasses, set helm-chart value `compat03x=true`.
+
+## Encryption ##
+
+csi-driver-lvm supports LUKS2 encryption for volumes at rest. When encryption is enabled, the LVM logical volume is formatted with LUKS2 and a dm-crypt mapper device is used transparently for all I/O.
+
+### Setup ###
+
+1. Create a Kubernetes Secret containing the LUKS passphrase:
+
+```bash
+kubectl create secret generic csi-lvm-encryption-secret \
+  --from-literal=passphrase='my-secret-passphrase'
+```
+
+2. Enable the encrypted StorageClasses in your Helm values (they are disabled by default):
+
+```yaml
+storageClasses:
+  linearEncrypted:
+    enabled: true
+  mirrorEncrypted:
+    enabled: true
+  stripedEncrypted:
+    enabled: true
+```
+
+3. Create PVCs using one of the encrypted StorageClasses. The encryption is handled transparently by the driver.
+
+### How it works ###
+
+- **NodeStageVolume**: LUKS-formats the LV (first use only), then opens it via `cryptsetup luksOpen`, creating a `/dev/mapper/csi-lvm-<volumeID>` device
+- **NodePublishVolume**: Mounts the mapper device (instead of the raw LV) to the target path
+- **NodeUnpublishVolume**: Unmounts as usual
+- **NodeUnstageVolume**: Closes the LUKS device via `cryptsetup luksClose`
+- **Volume expansion**: The LV is extended first, then the LUKS layer is resized, then the filesystem
+
+Both filesystem and raw block access types are supported with encryption.
+
+### Encrypted Ephemeral Volumes ###
+
+Encryption is also supported for CSI ephemeral (inline) volumes. Since ephemeral volumes bypass `NodeStageVolume`, the LUKS formatting and opening is handled directly during `NodePublishVolume`, and the LUKS device is closed during `NodeUnpublishVolume`.
+
+To use an encrypted ephemeral volume, specify `encryption: "true"` in `volumeAttributes` and reference the encryption secret via `nodePublishSecretRef`:
+
+```yaml
+volumes:
+  - name: encrypted-ephemeral
+    csi:
+      driver: lvm.csi.metal-stack.io
+      volumeAttributes:
+        size: "100Mi"
+        type: "linear"
+        encryption: "true"
+      nodePublishSecretRef:
+        name: csi-lvm-encryption-secret
+```
 
 ## Migration ##
 
