@@ -156,6 +156,27 @@ func VgExists(log *slog.Logger, vgname string) bool {
 	return vgname == strings.TrimSpace(string(out))
 }
 
+// VgIsActive reports whether the given volume group has all of its LVs activated.
+// A VG with no LVs is reported as active (nothing to activate).
+func VgIsActive(log *slog.Logger, vgname string) bool {
+	cmd := exec.Command("lvs", vgname, "--noheadings", "-o", "lv_attr")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Debug("unable to list logical volumes", "vgName", vgname, "error", err, "output", string(out))
+		return false
+	}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		attr := strings.TrimSpace(line)
+		if attr == "" {
+			continue
+		}
+		if len(attr) < 5 || attr[4] != 'a' {
+			return false
+		}
+	}
+	return true
+}
+
 // VgActivate execute vgchange -ay to activate all volumes of the volume group
 func VgActivate(log *slog.Logger) {
 	// TODO: this function is kind of best effort and does not return any errors and it's not clear if it worked or not

@@ -55,7 +55,14 @@ func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWriteP
 	log.Info("ensuring vg setup")
 
 	vgexists := lvm.VgExists(log, vgName)
-	if !vgexists {
+	if vgexists {
+		if lvm.VgIsActive(log, vgName) {
+			log.Info("vg already exists and is active", "vgName", vgName)
+		} else {
+			log.Info("vg already exists but is inactive, activating...", "vgName", vgName)
+			lvm.VgActivate(log)
+		}
+	} else {
 		log.Info("vg not found", "vgName", vgName)
 		lvm.VgActivate(log)
 		// now check again for existing vg again
