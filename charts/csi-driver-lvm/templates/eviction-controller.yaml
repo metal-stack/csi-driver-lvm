@@ -3,18 +3,14 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: csi-driver-lvm-controller
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.eviction.serviceaccount.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: csi-driver-lvm-controller
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.eviction.clusterrole.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - coordination.k8s.io
@@ -74,35 +70,29 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: csi-driver-lvm-controller
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.eviction.clusterrolebinding.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: csi-driver-lvm-controller
+  name: {{ include "csi-driver-lvm.eviction.clusterrole.fullname" . }}
 subjects:
   - kind: ServiceAccount
-    name: csi-driver-lvm-controller
+    name: {{ include "csi-driver-lvm.eviction.serviceaccount.fullname" . }}
     namespace: {{ .Release.Namespace }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: csi-driver-lvm-controller
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.eviction.deployment.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 spec:
   selector:
-    matchLabels:
-      app: csi-driver-lvm-controller
+    matchLabels: {{ include "csi-driver-lvm.eviction.selectorlabels" . | nindent 6 }}
   replicas: 1
   template:
     metadata:
-      labels:
-        app: csi-driver-lvm-controller
+      labels: {{ include "csi-driver-lvm.eviction.selectorlabels" . | nindent 8 }}
     spec:
       securityContext:
         runAsNonRoot: true
@@ -114,10 +104,10 @@ spec:
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
-            - --provisioner-name={{ .Values.lvm.driverName }}
+            - --provisioner-name={{ include "csi-driver-lvm.csi-driver.fullname" . }}
           image: "{{ .Values.evictionControllerImage.repository }}:{{ .Values.evictionControllerImage.tag }}"
           imagePullPolicy: {{ .Values.evictionControllerImage.pullPolicy }}
-          name: csi-driver-lvm-controller
+          name: {{ include "csi-driver-lvm.eviction.deployment.fullname" . }}
           ports: []
           securityContext:
             allowPrivilegeEscalation: false
@@ -145,6 +135,6 @@ spec:
               memory: 64Mi
           volumeMounts: []
       volumes: []
-      serviceAccountName: csi-driver-lvm-controller
+      serviceAccountName: {{ include "csi-driver-lvm.eviction.serviceaccount.fullname" . }}
       terminationGracePeriodSeconds: 10
 {{- end }}

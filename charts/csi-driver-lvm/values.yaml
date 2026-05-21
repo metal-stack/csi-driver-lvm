@@ -7,9 +7,9 @@ lvm:
   hostWritePath: /etc/lvm
 
   # these are primariliy for testing purposes
-  vgName: csi-lvm
-  driverName: lvm.csi.metal-stack.io
-  storageClassStub: csi-driver-lvm
+  # vgName: csi-lvm
+  # driverName: lvm.csi.metal-stack.io
+  # storageClassStub: csi-driver-lvm
   logLevel: info
 
 rbac:
@@ -42,41 +42,48 @@ kubernetes:
   kubeletPath: /var/lib/kubelet
 
 storageClasses:
-  linear:
-    enabled: true
-    additionalAnnotations: []
-    # this might be used to mark one of the StorageClasses as default:
-    # storageclass.kubernetes.io/is-default-class: "true"
-    reclaimPolicy: Delete
-  striped:
+  - name: linear
     enabled: true
     additionalAnnotations: []
     reclaimPolicy: Delete
-  mirror:
+    parameters:
+      type: "linear"
+  - name: striped
     enabled: true
     additionalAnnotations: []
     reclaimPolicy: Delete
-  linearEncrypted:
-    enabled: false
+    parameters:
+      type: "striped"
+  - name: mirror
+    enabled: true
     additionalAnnotations: []
     reclaimPolicy: Delete
-    encryptionSecret:
-      name: csi-lvm-encryption-secret
-      namespace: default
-  stripedEncrypted:
-    enabled: false
+    parameters:
+      type: "mirror"
+  - name: linear-encrypted
+    enabled: true
     additionalAnnotations: []
     reclaimPolicy: Delete
-    encryptionSecret:
-      name: csi-lvm-encryption-secret
-      namespace: default
-  mirrorEncrypted:
-    enabled: false
+    parameters:
+      type: "linear"
+      encryption: "true"
+  - name: striped-encrypted
+    enabled: true
     additionalAnnotations: []
     reclaimPolicy: Delete
-    encryptionSecret:
-      name: csi-lvm-encryption-secret
-      namespace: default
+    parameters:
+      type: "striped"
+      encryption: "true"
+  - name: mirror-encrypted
+    enabled: true
+    additionalAnnotations: []
+    reclaimPolicy: Delete
+    # passphrase: "encryption-passphrase"
+    parameters:
+      type: "mirror"
+      encryption: "true"
+      # csi.storage.k8s.io/node-stage-secret-name: "testsecret"
+      # csi.storage.k8s.io/node-stage-secret-namespace: "testsecretnamespace"
 
 nodeSelector:
   # The plugin daemonset will run on all nodes if it has a toleration,

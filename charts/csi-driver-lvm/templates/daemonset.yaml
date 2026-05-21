@@ -2,18 +2,14 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: csi-driver-lvm
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.serviceaccount.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 ---
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-driver-lvm
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.clusterrole.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
@@ -52,32 +48,28 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-driver-lvm
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.clusterrolebinding.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: csi-driver-lvm
+    name: {{ include "csi-driver-lvm.serviceaccount.fullname" . }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: csi-driver-lvm
+  name: {{ include "csi-driver-lvm.clusterrole.fullname" . }}
   apiGroup: rbac.authorization.k8s.io
 ---
 {{- if and .Values.rbac.pspEnabled (.Capabilities.APIVersions.Has "policy/v1beta1") }}
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:
-  name: csi-driver-lvm
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.podsecuritypolicy.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 spec:
   allowedHostPaths:
   - pathPrefix: /lib/modules
   - pathPrefix: {{ .Values.lvm.hostWritePath }}/cache
-  - pathPrefix: {{ .Values.kubernetes.kubeletPath }}/plugins/{{ .Values.lvm.storageClassStub }}
+  - pathPrefix: {{ .Values.kubernetes.kubeletPath }}/plugins/{{ include "csi-driver-lvm.plugin.fullname" . }}
   - pathPrefix: {{ .Values.lvm.hostWritePath }}/backup
   - pathPrefix: {{ .Values.lvm.hostWritePath }}/lock
   - pathPrefix: {{ .Values.kubernetes.kubeletPath }}/plugins
@@ -103,10 +95,8 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: csi-driver-lvm
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.role.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 rules:
 - apiGroups:
   - policy
@@ -121,37 +111,31 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: csi-driver-lvm
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.rolebinding.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: csi-driver-lvm
+  name: {{ include "csi-driver-lvm.role.fullname" . }}
 subjects:
 - kind: ServiceAccount
-  name: csi-driver-lvm
+  name: {{ include "csi-driver-lvm.serviceaccount.fullname" . }}
   namespace: {{ .Release.Namespace }}
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: csi-driver-lvm
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.daemonset.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 spec:
   revisionHistoryLimit: 10
   selector:
-    matchLabels:
-      app: csi-driver-lvm
+    matchLabels: {{ include "csi-driver-lvm.daemonset.selectorlabels" . | nindent 6 }}
   template:
     metadata:
-      labels:
-        app: csi-driver-lvm
+      labels: {{ include "csi-driver-lvm.daemonset.selectorlabels" . | nindent 8 }}
     spec:
-      serviceAccountName: csi-driver-lvm
+      serviceAccountName: {{ include "csi-driver-lvm.serviceaccount.fullname" . }}
 {{- if .Values.tolerations.plugin }}
       tolerations:
 {{ toYaml .Values.tolerations.plugin | indent 8 }}
@@ -223,7 +207,7 @@ spec:
         args:
         - --v=5
         - --csi-address=/csi/csi.sock
-        - --kubelet-registration-path={{ .Values.kubernetes.kubeletPath }}/plugins/{{ .Values.lvm.storageClassStub }}/csi.sock
+        - --kubelet-registration-path={{ .Values.kubernetes.kubeletPath }}/plugins/{{ include "csi-driver-lvm.plugin.fullname" . }}/csi.sock
         env:
         - name: KUBE_NODE_NAME
           valueFrom:
@@ -241,18 +225,18 @@ spec:
         volumeMounts:
         - mountPath: /csi
           name: socket-dir
-        - mountPath: {{ .Values.kubernetes.kubeletPath }}/plugins/{{ .Values.lvm.storageClassStub }}
+        - mountPath: {{ .Values.kubernetes.kubeletPath }}/plugins/{{ include "csi-driver-lvm.plugin.fullname" . }}
           name: socket-dir
         - mountPath: /registration
           name: registration-dir
       - name: csi-driver-lvm
         args:
-        - --drivername={{ .Values.lvm.driverName }}
+        - --drivername={{ include "csi-driver-lvm.csi-driver.fullname" . }}
         - --endpoint=/csi/csi.sock
         - --hostwritepath={{ .Values.lvm.hostWritePath }}
         - --devices={{ .Values.lvm.devicePattern }}
         - --nodeid=$(KUBE_NODE_NAME)
-        - --vgname={{ .Values.lvm.vgName }}
+        - --vgname={{ include "csi-driver-lvm.csi-driver.vgname" . }}
         - --log-level={{ .Values.lvm.logLevel }}
         env:
         - name: KUBE_NODE_NAME
@@ -331,7 +315,7 @@ spec:
       terminationGracePeriodSeconds: 30
       volumes:
       - hostPath:
-          path: {{ .Values.kubernetes.kubeletPath }}/plugins/{{ .Values.lvm.storageClassStub }}
+          path: {{ .Values.kubernetes.kubeletPath }}/plugins/{{ include "csi-driver-lvm.plugin.fullname" . }}
           type: DirectoryOrCreate
         name: socket-dir
       - hostPath:

@@ -1,135 +1,54 @@
----
-{{- $storageClass := .Values.storageClasses.linear -}}
-{{ if $storageClass.enabled }}
+{{- range .Values.storageClasses }}
+{{- if .enabled }}
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: {{ .Values.lvm.storageClassStub }}-linear
-{{- if not (empty $storageClass.additionalAnnotations) }}
+  name: {{ include "csi-driver-lvm.storageclass.fullname" (dict "global" $ "storageclass" .) }}
+{{- if not (empty .additionalAnnotations) }}
   annotations:
-    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
-{{ end }}
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
-provisioner: {{ .Values.lvm.driverName }}
-reclaimPolicy: {{ $storageClass.reclaimPolicy }}
-volumeBindingMode: WaitForFirstConsumer
+    {{- .additionalAnnotations | toYaml | nindent 4 -}}
+{{- end }}
+  labels: {{- include "csi-driver-lvm.labels" $ | nindent 4 }}
+provisioner: {{ include "csi-driver-lvm.csi-driver.fullname" $ }}
+reclaimPolicy: {{ .reclaimPolicy }}
+volumeBindingMode: {{ default "WaitForFirstConsumer" .volumeBindingMode }}
 allowVolumeExpansion: true
-parameters:
-  type: "linear"
-{{ end }}
+parameters: {{ include "csi-driver-lvm.storageclass.parameters" (dict "global" $ "storageclass" .) | nindent 2 }}
 ---
-{{- $storageClass := .Values.storageClasses.mirror -}}
-{{ if $storageClass.enabled }}
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
+
+{{- if and .parameters.encryption (eq .parameters.encryption "true" ) }}
+
+{{- $secretName := (include "csi-driver-lvm.storageclass.encryption.secret.fullname" (dict "global" $ "storageclass" .)) }}
+{{- if not (empty (index .parameters "csi.storage.k8s.io/node-stage-secret-name")) }}
+{{- $secretName := (index .parameters "csi.storage.k8s.io/node-stage-secret-name") }}
+{{- end }}
+
+{{- $secretNamespace := (include "csi-driver-lvm.storageclass.encryption.secret.namespace" (dict "global" $ "storageclass" .)) }}
+{{- if not (empty (index .parameters "csi.storage.k8s.io/node-stage-secret-namespace")) }}
+{{- $secretNamespace := (index .parameters "csi.storage.k8s.io/node-stage-secret-namespace") }}
+{{- end }}
+
+{{- $oldSecret := (lookup "v1" "Secret" $secretNamespace $secretName) }}
+
+apiVersion: v1
+kind: Secret
 metadata:
-  name: {{ .Values.lvm.storageClassStub }}-mirror
-{{- if not (empty $storageClass.additionalAnnotations) }}
-  annotations:
-    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
-{{ end }}
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
-provisioner: {{ .Values.lvm.driverName }}
-reclaimPolicy: {{ $storageClass.reclaimPolicy }}
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-parameters:
-  type: "mirror"
-{{ end }}
+  name: {{ $secretName }}
+  namespace: {{ $secretNamespace }}
+  labels: {{- include "csi-driver-lvm.labels" $ | nindent 4 }}
+type: Opaque
+data:
+  {{- if not (empty .passphrase) }}
+  passphrase: {{ .passphrase | b64enc | quote }}
+  {{- else }}
+  {{- if $oldSecret }}
+  passphrase: {{ $oldSecret.data.passphrase }}
+  {{- else }}
+  passphrase: {{ randAlphaNum 32 | b64enc | quote }}
+  {{- end }}
+  {{- end }}
 ---
-{{- $storageClass := .Values.storageClasses.striped -}}
-{{ if $storageClass.enabled }}
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: {{ .Values.lvm.storageClassStub }}-striped
-{{- if not (empty $storageClass.additionalAnnotations) }}
-  annotations:
-    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
-{{ end }}
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
-provisioner: {{ .Values.lvm.driverName }}
-reclaimPolicy: {{ $storageClass.reclaimPolicy }}
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-parameters:
-  type: "striped"
-{{ end }}
----
-{{- $storageClass := .Values.storageClasses.linearEncrypted -}}
-{{ if $storageClass.enabled }}
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: {{ .Values.lvm.storageClassStub }}-linear-encrypted
-{{- if not (empty $storageClass.additionalAnnotations) }}
-  annotations:
-    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
-{{ end }}
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
-provisioner: {{ .Values.lvm.driverName }}
-reclaimPolicy: {{ $storageClass.reclaimPolicy }}
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-parameters:
-  type: "linear"
-  encryption: "true"
-  csi.storage.k8s.io/node-stage-secret-name: {{ $storageClass.encryptionSecret.name }}
-  csi.storage.k8s.io/node-stage-secret-namespace: {{ $storageClass.encryptionSecret.namespace }}
-{{ end }}
----
-{{- $storageClass := .Values.storageClasses.mirrorEncrypted -}}
-{{ if $storageClass.enabled }}
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: {{ .Values.lvm.storageClassStub }}-mirror-encrypted
-{{- if not (empty $storageClass.additionalAnnotations) }}
-  annotations:
-    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
-{{ end }}
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
-provisioner: {{ .Values.lvm.driverName }}
-reclaimPolicy: {{ $storageClass.reclaimPolicy }}
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-parameters:
-  type: "mirror"
-  encryption: "true"
-  csi.storage.k8s.io/node-stage-secret-name: {{ $storageClass.encryptionSecret.name }}
-  csi.storage.k8s.io/node-stage-secret-namespace: {{ $storageClass.encryptionSecret.namespace }}
-{{ end }}
----
-{{- $storageClass := .Values.storageClasses.stripedEncrypted -}}
-{{ if $storageClass.enabled }}
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: {{ .Values.lvm.storageClassStub }}-striped-encrypted
-{{- if not (empty $storageClass.additionalAnnotations) }}
-  annotations:
-    {{- $storageClass.additionalAnnotations | toYaml | nindent 4 -}}
-{{ end }}
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
-provisioner: {{ .Values.lvm.driverName }}
-reclaimPolicy: {{ $storageClass.reclaimPolicy }}
-volumeBindingMode: WaitForFirstConsumer
-allowVolumeExpansion: true
-parameters:
-  type: "striped"
-  encryption: "true"
-  csi.storage.k8s.io/node-stage-secret-name: {{ $storageClass.encryptionSecret.name }}
-  csi.storage.k8s.io/node-stage-secret-namespace: {{ $storageClass.encryptionSecret.namespace }}
-{{ end }}
+{{- end }}
+
+{{- end }}
+{{- end }}

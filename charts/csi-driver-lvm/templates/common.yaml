@@ -2,10 +2,8 @@
 apiVersion: storage.k8s.io/v1
 kind: CSIDriver
 metadata:
-  name: {{ .Values.lvm.driverName }}
-  labels:
-    heritage: {{ .Release.Service }}
-    release: {{ .Release.Name }}
+  name: {{ include "csi-driver-lvm.csi-driver.fullname" . }}
+  labels: {{- include "csi-driver-lvm.labels" . | nindent 4 }}
 spec:
   volumeLifecycleModes:
   - Persistent
