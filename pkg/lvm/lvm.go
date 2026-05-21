@@ -32,7 +32,7 @@ type lsblk struct {
 	} `json:"blockdevices"`
 }
 
-func MountLV(log *slog.Logger, lvname, mountPath string, fsType string, devicePath string) (string, error) {
+func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mountOptions []string) (string, error) {
 	lvPath := devicePath
 
 	formatted := false
@@ -91,7 +91,11 @@ func MountLV(log *slog.Logger, lvname, mountPath string, fsType string, devicePa
 	}
 
 	// --make-shared is required that this mount is visible outside this container.
-	mountArgs := []string{"--make-shared", "-t", fsType, lvPath, mountPath}
+	mountArgs := []string{"--make-shared", "-t", fsType}
+	if len(mountOptions) > 0 {
+		mountArgs = append(mountArgs, "-o", strings.Join(mountOptions, ","))
+	}
+	mountArgs = append(mountArgs, lvPath, mountPath)
 	log.Debug("mounting with mount", "args", strings.Join(mountArgs, " "))
 	cmd = exec.Command("mount", mountArgs...)
 	out, err = cmd.CombinedOutput()

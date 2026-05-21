@@ -324,6 +324,50 @@
     [ "$status" -eq 0 ]
 }
 
+@test "create storageclass with mountOptions" {
+    run kubectl apply -f files/storageclass.mountoptions.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "create pvc with mountOptions storageclass" {
+    run kubectl apply -f files/pvc.mountoptions.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.mountoptions.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy mountOptions pod" {
+    run kubectl apply -f files/pod.mountoptions.vol.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "mountOptions pod running" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mountoptions.vol.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "check mountOptions applied to volume" {
+    run kubectl exec volume-test-mountoptions -- sh -c "mount | grep /data"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"noatime"* ]]
+}
+
+@test "delete mountOptions pod" {
+    run kubectl delete -f files/pod.mountoptions.vol.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete mountOptions pvc" {
+    run kubectl delete -f files/pvc.mountoptions.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete mountOptions storageclass" {
+    run kubectl delete -f files/storageclass.mountoptions.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
 @test "write to volume and ensure data gets written" {
     run kubectl apply -f files/pvc.remount.yaml --wait --timeout=30s
     [ "$status" -eq 0 ]
