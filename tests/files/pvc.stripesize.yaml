@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-pvc-stripesize
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-driver-lvm-stripesize
+  resources:
+    requests:
+      storage: 100Mi

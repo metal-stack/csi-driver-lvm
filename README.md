@@ -49,6 +49,24 @@ Now you can use one of following storageClasses:
 
 To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclasses, set helm-chart value `compat03x=true`.
 
+## Stripe size ##
+
+For `striped` volumes you can optionally set the LVM stripe size via the `stripeSize` parameter on the StorageClass. The value is passed verbatim to `lvcreate --stripesize` and must be a power of two (e.g. `64k`, `256k`, `1m`). It applies to `striped` volumes only, and only when the node's volume group has at least two physical volumes; otherwise it is ignored.
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-striped-stripesize
+provisioner: lvm.csi.metal-stack.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "striped"
+  stripeSize: "64k"
+```
+
 ## Encryption ##
 
 csi-driver-lvm supports LUKS2 encryption for volumes at rest. When encryption is enabled, the LVM logical volume is formatted with LUKS2 and a dm-crypt mapper device is used transparently for all I/O.

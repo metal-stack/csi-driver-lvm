@@ -368,6 +368,58 @@
     [ "$status" -eq 0 ]
 }
 
+@test "create storageclass with stripeSize" {
+    run kubectl apply -f files/storageclass.stripesize.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "create pvc with stripeSize storageclass" {
+    run kubectl apply -f files/pvc.stripesize.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.stripesize.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy stripeSize pod" {
+    run kubectl apply -f files/pod.stripesize.vol.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "stripeSize pod running" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.stripesize.vol.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "check stripeSize applied to logical volume" {
+    PV_NAME=$(kubectl get pvc lvm-pvc-stripesize -o jsonpath='{.spec.volumeName}')
+    [ -n "$PV_NAME" ]
+    NODE=$(kubectl get pod volume-test-stripesize -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    # A linear volume reports a stripe size of 0; 256k (262144 bytes) proves the LV
+    # was striped via our "lvcreate --stripesize 256k" (LVM's default is 64k).
+    # Note: the lvs report field is "stripe_size", not the "--stripesize" option name.
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- lvs --noheadings --nosuffix --units b -o stripe_size "csi-lvm/$PV_NAME"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"262144"* ]]
+}
+
+@test "delete stripeSize pod" {
+    run kubectl delete -f files/pod.stripesize.vol.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete stripeSize pvc" {
+    run kubectl delete -f files/pvc.stripesize.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete stripeSize storageclass" {
+    run kubectl delete -f files/storageclass.stripesize.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
 @test "write to volume and ensure data gets written" {
     run kubectl apply -f files/pvc.remount.yaml --wait --timeout=30s
     [ "$status" -eq 0 ]

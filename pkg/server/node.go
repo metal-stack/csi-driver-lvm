@@ -73,7 +73,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, req.GetVolumeContext()["type"], false)
+		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, req.GetVolumeContext()["type"], false, req.GetVolumeContext()["stripeSize"])
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}

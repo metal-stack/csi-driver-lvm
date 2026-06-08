@@ -250,9 +250,9 @@ func CreateVG(log *slog.Logger, name string, devicesPattern string) (string, err
 	return string(out), err
 }
 
-// CreateLV creates the new volume
-// used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
-func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType string, integrity bool) (string, error) {
+// CreateLV creates the new volume.
+// Used by the controller's CreateVolume and by the nodeserver for ephemeral volumes.
+func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType string, integrity bool, stripeSize string) (string, error) {
 	if LvExists(log, vg, name) {
 		log.Debug("logicalvolume already exists", "name", name)
 		return name, nil
@@ -263,13 +263,11 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 	}
 
 	switch lvmType {
-	case "linear", "mirror", "striped":
+	case linearType, mirrorType, stripedType:
 		// These are supported lvm types
 	default:
 		return "", fmt.Errorf("lvmType is incorrect: %s", lvmType)
 	}
-
-	args := []string{"-v", "--yes", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
 
 	pvs, err := pvCount(vg)
 	if err != nil {
@@ -278,17 +276,42 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 
 	if pvs < 2 {
 		log.Warn("pvcount is <2 only linear is supported")
+	}
+
+	args, err := buildLvcreateArgs(name, size, lvmType, pvs, integrity, stripeSize)
+	if err != nil {
+		return "", err
+	}
+
+	args = append(args, vg)
+	log.Debug("lvcreate", "args", args)
+	cmd := exec.Command("lvcreate", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// buildLvcreateArgs assembles the lvcreate command-line arguments, excluding the
+// volume group name which the caller appends last.
+// stripeSize, when set, is passed verbatim to lvcreate's --stripesize (e.g. "256k")
+// and only applies to striped volumes.
+func buildLvcreateArgs(name string, size uint64, lvmType string, pvs int, integrity bool, stripeSize string) ([]string, error) {
+	args := []string{"-v", "--yes", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
+
+	if pvs < 2 {
 		lvmType = linearType
 	}
 
 	switch lvmType {
 	case stripedType:
 		args = append(args, "--type", "striped", "--stripes", fmt.Sprintf("%d", pvs))
+		if s := strings.TrimSpace(stripeSize); s != "" {
+			args = append(args, "--stripesize", s)
+		}
 	case mirrorType:
 		args = append(args, "--type", "raid1", "--mirrors", "1", "--nosync")
 	case linearType:
 	default:
-		return "", fmt.Errorf("unsupported lvmtype: %s", lvmType)
+		return nil, fmt.Errorf("unsupported lvmtype: %s", lvmType)
 	}
 
 	if integrity {
@@ -296,7 +319,7 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 		case mirrorType:
 			args = append(args, "--raidintegrity", "y")
 		default:
-			return "", fmt.Errorf("integrity is only supported if type is mirror")
+			return nil, fmt.Errorf("integrity is only supported if type is mirror")
 		}
 	}
 
@@ -304,11 +327,8 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 	for _, tag := range tags {
 		args = append(args, "--addtag", tag)
 	}
-	args = append(args, vg)
-	log.Debug("lvcreate", "args", args)
-	cmd := exec.Command("lvcreate", args...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+
+	return args, nil
 }
 
 func LvExists(log *slog.Logger, vg string, name string) bool {
