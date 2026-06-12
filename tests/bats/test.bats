@@ -420,6 +420,62 @@
     [ "$status" -eq 0 ]
 }
 
+@test "create storageclass with mkfsOptions" {
+    run kubectl apply -f files/storageclass.mkfsoptions.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "create pvc with mkfsOptions storageclass" {
+    run kubectl apply -f files/pvc.mkfsoptions.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.phase}'=Pending -f files/pvc.mkfsoptions.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "deploy mkfsOptions pod" {
+    run kubectl apply -f files/pod.mkfsoptions.vol.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "mkfsOptions pod running" {
+    run kubectl wait --for=jsonpath='{.status.phase}'=Running -f files/pod.mkfsoptions.vol.yaml --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "check mkfsOptions applied to filesystem" {
+    PV_NAME=$(kubectl get pvc lvm-pvc-mkfsoptions -o jsonpath='{.spec.volumeName}')
+    [ -n "$PV_NAME" ]
+    NODE=$(kubectl get pod volume-test-mkfsoptions -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    # ext4 was formatted with "-E stride=64,stripe_width=384"; tune2fs echoes those
+    # back as the "RAID stride" / "RAID stripe width" superblock fields. A linear LV
+    # has no auto-detected geometry, so seeing them proves the option reached mkfs.
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- sh -c "tune2fs -l /dev/csi-lvm/$PV_NAME 2>/dev/null | grep 'RAID stride'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"64"* ]]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- sh -c "tune2fs -l /dev/csi-lvm/$PV_NAME 2>/dev/null | grep 'RAID stripe width'"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"384"* ]]
+}
+
+@test "delete mkfsOptions pod" {
+    run kubectl delete -f files/pod.mkfsoptions.vol.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete mkfsOptions pvc" {
+    run kubectl delete -f files/pvc.mkfsoptions.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete mkfsOptions storageclass" {
+    run kubectl delete -f files/storageclass.mkfsoptions.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
 @test "write to volume and ensure data gets written" {
     run kubectl apply -f files/pvc.remount.yaml --wait --timeout=30s
     [ "$status" -eq 0 ]

@@ -1,0 +1,15 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-striped-mkfsoptions
+provisioner: lvm.csi.metal-stack.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "striped"
+  # Optional: extra options for the "mkfs" call that formats the volume. The value is
+  # split on whitespace and passed verbatim to "mkfs.<fsType>" before the device, so
+  # the accepted options depend on the filesystem. Here ext4's stride/stripe_width are
+  # aligned to a striped LV. Only applied when the volume is first formatted.
+  mkfsOptions: "-E stride=64,stripe_width=384"

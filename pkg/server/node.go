@@ -133,7 +133,8 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
 		mountCap := req.GetVolumeCapability().GetMount()
-		output, err := lvm.MountLV(d.log, volID, targetPath, mountCap.GetFsType(), devicePath, mountCap.GetMountFlags())
+		mkfsOptions := req.GetVolumeContext()["mkfsOptions"]
+		output, err := lvm.MountLV(d.log, volID, targetPath, mountCap.GetFsType(), devicePath, mountCap.GetMountFlags(), mkfsOptions)
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}

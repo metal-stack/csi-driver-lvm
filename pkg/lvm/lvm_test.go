@@ -147,3 +147,101 @@ func TestBuildLvcreateArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildMkfsArgs(t *testing.T) {
+	const device = "/dev/csi-lvm/pvc-123"
+
+	tests := []struct {
+		name        string
+		forceFormat bool
+		mkfsOptions string
+		check       func(t *testing.T, args []string)
+	}{
+		{
+			name: "no options is just the device path",
+			check: func(t *testing.T, args []string) {
+				if len(args) != 1 {
+					t.Errorf("expected only the device path, got %v", args)
+				}
+				if hasFlag(args, "-f") {
+					t.Errorf("did not expect -f, got %v", args)
+				}
+			},
+		},
+		{
+			name:        "force only",
+			forceFormat: true,
+			check: func(t *testing.T, args []string) {
+				if args[0] != "-f" {
+					t.Errorf("expected -f first, got %v", args)
+				}
+				if len(args) != 2 {
+					t.Errorf("expected -f and the device path only, got %v", args)
+				}
+			},
+		},
+		{
+			name:        "mkfs options only",
+			mkfsOptions: "-E stride=64,stripe_width=384",
+			check: func(t *testing.T, args []string) {
+				if hasFlag(args, "-f") {
+					t.Errorf("did not expect -f, got %v", args)
+				}
+				if !hasFlagValue(args, "-E", "stride=64,stripe_width=384") {
+					t.Errorf("expected -E stride=64,stripe_width=384, got %v", args)
+				}
+			},
+		},
+		{
+			name:        "force and mkfs options",
+			forceFormat: true,
+			mkfsOptions: "-E stride=64,stripe_width=384",
+			check: func(t *testing.T, args []string) {
+				if args[0] != "-f" {
+					t.Errorf("expected -f first, got %v", args)
+				}
+				if !hasFlagValue(args, "-E", "stride=64,stripe_width=384") {
+					t.Errorf("expected -E stride=64,stripe_width=384, got %v", args)
+				}
+			},
+		},
+		{
+			name:        "surrounding and repeated whitespace is collapsed",
+			mkfsOptions: "  -b 4096   -E stride=64  ",
+			check: func(t *testing.T, args []string) {
+				if !hasFlagValue(args, "-b", "4096") {
+					t.Errorf("expected -b 4096, got %v", args)
+				}
+				if !hasFlagValue(args, "-E", "stride=64") {
+					t.Errorf("expected -E stride=64, got %v", args)
+				}
+				for _, a := range args {
+					if a == "" {
+						t.Errorf("did not expect an empty argument, got %v", args)
+					}
+				}
+			},
+		},
+		{
+			name:        "whitespace-only options are ignored",
+			mkfsOptions: "   ",
+			check: func(t *testing.T, args []string) {
+				if len(args) != 1 {
+					t.Errorf("expected only the device path, got %v", args)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := buildMkfsArgs(device, tt.forceFormat, tt.mkfsOptions)
+			if len(args) == 0 || args[len(args)-1] != device {
+				t.Fatalf("expected the device path %q to be the last argument, got %v", device, args)
+			}
+			if tt.check != nil {
+				tt.check(t, args)
+			}
+		})
+	}
+}

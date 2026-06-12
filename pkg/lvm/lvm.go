@@ -32,7 +32,7 @@ type lsblk struct {
 	} `json:"blockdevices"`
 }
 
-func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mountOptions []string) (string, error) {
+func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mountOptions []string, mkfsOptions string) (string, error) {
 	lvPath := devicePath
 
 	formatted := false
@@ -71,11 +71,7 @@ func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mou
 	}
 
 	if !formatted {
-		formatArgs := []string{}
-		if forceFormat {
-			formatArgs = append(formatArgs, "-f")
-		}
-		formatArgs = append(formatArgs, lvPath)
+		formatArgs := buildMkfsArgs(lvPath, forceFormat, mkfsOptions)
 
 		log.Debug("formatting with mkfs", "fs-type", fsType, "args", strings.Join(formatArgs, " "))
 		cmd = exec.Command(fmt.Sprintf("mkfs.%s", fsType), formatArgs...) //nolint:gosec
@@ -111,6 +107,21 @@ func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mou
 	}
 	log.Debug("mountlv output", "output", out)
 	return "", nil
+}
+
+// buildMkfsArgs assembles the mkfs command-line arguments, with the device path
+// appended last.
+// mkfsOptions, when set, is split on whitespace and passed verbatim before
+// the device path (e.g. "-E stride=64,stripe_width=384" to align an ext4
+// filesystem to a striped LV). The accepted options depend on the filesystem.
+func buildMkfsArgs(devicePath string, forceFormat bool, mkfsOptions string) []string {
+	args := []string{}
+	if forceFormat {
+		args = append(args, "-f")
+	}
+	args = append(args, strings.Fields(mkfsOptions)...)
+	args = append(args, devicePath)
+	return args
 }
 
 func BindMountLV(log *slog.Logger, lvname, mountPath string, devicePath string) (string, error) {
