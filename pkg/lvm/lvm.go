@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/mattn/go-shellwords"
 )
 
 const (
@@ -32,7 +34,7 @@ type lsblk struct {
 	} `json:"blockdevices"`
 }
 
-func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mountOptions []string) (string, error) {
+func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mountOptions []string, additionalMkfsParams string) (string, error) {
 	lvPath := devicePath
 
 	formatted := false
@@ -71,10 +73,20 @@ func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mou
 	}
 
 	if !formatted {
+		// Parse quoting without executing a shell or expanding variables.
+		parser := shellwords.Parser{ParseEnv: false, ParseBacktick: false}
+		mkfsArgs, err := parser.Parse(additionalMkfsParams)
+		if err != nil {
+			return "", fmt.Errorf("unable to parse additionalMkfsParams: %w", err)
+		}
+		if parser.Position != -1 {
+			return "", fmt.Errorf("unable to parse additionalMkfsParams: unquoted shell operators are not supported")
+		}
 		formatArgs := []string{}
 		if forceFormat {
 			formatArgs = append(formatArgs, "-f")
 		}
+		formatArgs = append(formatArgs, mkfsArgs...)
 		formatArgs = append(formatArgs, lvPath)
 
 		log.Debug("formatting with mkfs", "fs-type", fsType, "args", strings.Join(formatArgs, " "))

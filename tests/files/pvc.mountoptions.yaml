@@ -8,4 +8,4 @@ spec:
   storageClassName: csi-driver-lvm-mountoptions
   resources:
     requests:
-      storage: 100Mi
+      storage: 400Mi

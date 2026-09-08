@@ -4,6 +4,8 @@ metadata:
   name: csi-driver-lvm-mountoptions
 parameters:
   type: linear
+  csi.storage.k8s.io/fstype: xfs
+  additionalMkfsParams: "-i nrext64=1 -m rmapbt=0"
 provisioner: lvm.csi.metal-stack.io
 allowVolumeExpansion: true
 reclaimPolicy: Delete
