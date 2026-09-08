@@ -168,6 +168,44 @@
     [ "$DIFF" -eq 0 ]
 }
 
+@test "deploy inline pod with additionalMkfsParams" {
+    run kubectl apply -f files/pod.inline.mkfsparams.yaml --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
+@test "inline additionalMkfsParams are rejected" {
+    POD_UID=$(kubectl get pod volume-test-inline-mkfsparams -o jsonpath='{.metadata.uid}')
+    [ -n "$POD_UID" ]
+
+    end=$((SECONDS+60))
+    while [ $SECONDS -lt $end ]; do
+        run kubectl get events --field-selector "involvedObject.uid=$POD_UID,reason=FailedMount" -o json
+        [ "$status" -eq 0 ]
+        if [[ "$output" == *"additionalMkfsParams is not supported for inline ephemeral volumes"* ]]; then
+            break
+        fi
+        sleep 2
+    done
+    [[ "$output" == *"additionalMkfsParams is not supported for inline ephemeral volumes"* ]]
+}
+
+@test "inline additionalMkfsParams rejection does not allocate an LV" {
+    NODE=$(kubectl get pod volume-test-inline-mkfsparams -o jsonpath='{.spec.nodeName}')
+    [ -n "$NODE" ]
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+    [ -n "$PLUGIN_POD" ]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- lvs csi-lvm --reportformat json -o lv_name
+    [ "$status" -eq 0 ]
+    run jq -e '[.report[].lv[] | select(.lv_name | startswith("csi-"))] | length == 0' <<< "$output"
+    [ "$status" -eq 0 ]
+}
+
+@test "delete inline pod with additionalMkfsParams" {
+    run kubectl delete -f files/pod.inline.mkfsparams.yaml --grace-period=0 --wait --timeout=30s
+    [ "$status" -eq 0 ]
+}
+
 @test "create pvc linear" {
     run kubectl apply -f files/pvc.linear.yaml --wait --timeout=30s
     [ "$status" -eq 0 ]
@@ -351,6 +389,21 @@
     run kubectl exec volume-test-mountoptions -- sh -c "mount | grep /data"
     [ "$status" -eq 0 ]
     [[ "$output" == *"noatime"* ]]
+    [[ "$output" == *"type xfs"* ]]
+}
+
+@test "check additionalMkfsParams applied to XFS volume" {
+    PV_NAME=$(kubectl get pvc lvm-pvc-mountoptions -o jsonpath='{.spec.volumeName}')
+    [ -n "$PV_NAME" ]
+    NODE=$(kubectl get pod volume-test-mountoptions -o jsonpath='{.spec.nodeName}')
+    [ -n "$NODE" ]
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+    [ -n "$PLUGIN_POD" ]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- xfs_info "/dev/csi-lvm/$PV_NAME"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"nrext64=1"* ]]
+    [[ "$output" == *"rmapbt=0"* ]]
 }
 
 @test "delete mountOptions pod" {

@@ -59,6 +59,11 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	ephemeralVolume := req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "true" ||
 		req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "" && d.ephemeral // Kubernetes 1.15 doesn't have csi.storage.k8s.io/ephemeral.
 
+	// Inline attributes are pod-controlled, and mkfs options can write to other host devices.
+	if ephemeralVolume && req.GetVolumeContext()["additionalMkfsParams"] != "" {
+		return nil, status.Error(codes.InvalidArgument, "additionalMkfsParams is not supported for inline ephemeral volumes")
+	}
+
 	// if ephemeral is specified, create volume here
 	if ephemeralVolume {
 		size, err := parseSize(req.GetVolumeContext()["size"])
@@ -133,7 +138,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
 		mountCap := req.GetVolumeCapability().GetMount()
-		output, err := lvm.MountLV(d.log, volID, targetPath, mountCap.GetFsType(), devicePath, mountCap.GetMountFlags())
+		output, err := lvm.MountLV(d.log, volID, targetPath, mountCap.GetFsType(), devicePath, mountCap.GetMountFlags(), req.GetVolumeContext()["additionalMkfsParams"])
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}

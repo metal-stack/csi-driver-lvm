@@ -49,6 +49,27 @@ Now you can use one of following storageClasses:
 
 To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclasses, set helm-chart value `compat03x=true`.
 
+## Filesystem Formatting Options ##
+
+Set `parameters.additionalMkfsParams` on a StorageClass to pass additional arguments to
+`mkfs.<fstype>` when a new volume is formatted:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-driver-lvm-striped-xfs
+provisioner: lvm.csi.metal-stack.io
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  type: striped
+  csi.storage.k8s.io/fstype: xfs
+  additionalMkfsParams: "-i nrext64=1 -m rmapbt=0"
+```
+
+This parameter is only supported for persistent volumes. Inline ephemeral volumes
+cannot set it because formatting options can write to host devices outside the allocated volume.
+
 ## Encryption ##
 
 csi-driver-lvm supports LUKS2 encryption for volumes at rest. When encryption is enabled, the LVM logical volume is formatted with LUKS2 and a dm-crypt mapper device is used transparently for all I/O.
