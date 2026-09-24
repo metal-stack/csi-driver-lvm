@@ -50,9 +50,10 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
 
-	// stripeSize is passed verbatim to "lvcreate --stripesize" and only takes effect
-	// for striped volumes (see lvm.CreateLV).
 	stripeSize := req.GetParameters()["stripeSize"]
+	if err := validateStripeSize(lvmType, stripeSize); err != nil {
+		return nil, err
+	}
 
 	if value, ok := req.GetParameters()["integrity"]; ok {
 		var err error

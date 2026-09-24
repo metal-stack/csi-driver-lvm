@@ -61,6 +61,10 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	// if ephemeral is specified, create volume here
 	if ephemeralVolume {
+		if err := validateStripeSize(req.GetVolumeContext()["type"], req.GetVolumeContext()["stripeSize"]); err != nil {
+			return nil, err
+		}
+
 		size, err := parseSize(req.GetVolumeContext()["size"])
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())

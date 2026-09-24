@@ -51,7 +51,7 @@ To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclass
 
 ## Stripe size ##
 
-For `striped` volumes you can optionally set the LVM stripe size via the `stripeSize` parameter on the StorageClass. The value is passed verbatim to `lvcreate --stripesize` and must be a power of two (e.g. `64k`, `256k`, `1m`). It applies to `striped` volumes only, and only when the node's volume group has at least two physical volumes; otherwise it is ignored.
+For `striped` volumes you can optionally set the LVM stripe size via the `stripeSize` parameter on the StorageClass. The value is passed to `lvcreate --stripesize` and must be a power of two of at least 4 KiB (e.g. `64k`, `256k`, `1m`); values without a suffix are in KiB. Invalid values are rejected during provisioning, with the error visible in the PVC events. The parameter is ignored for other volume types. For `striped` volumes it is validated even with a single physical volume, but will only take effect when the node's volume group has at least two physical volumes.
 
 ```yaml
 apiVersion: storage.k8s.io/v1
