@@ -48,6 +48,20 @@ rules:
   - apiGroups: ["storage.k8s.io"]
     resources: ["csistoragecapacities"]
     verbs: ["get", "list", "watch", "update", "patch", "create", "delete"]
+{{- if (.Values.snapshots | default dict).enabled }}
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents/status"]
+    verbs: ["update", "patch"]
+{{- end }}
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -184,6 +198,11 @@ spec:
           - --node-deployment
           - --enable-capacity
           - --strict-topology
+{{- with .Values.provisioner }}
+{{- with .timeout }}
+          - --timeout={{ . }}
+{{- end }}
+{{- end }}
         env:
           - name: NODE_NAME
             valueFrom:
@@ -218,6 +237,31 @@ spec:
         volumeMounts:
           - mountPath: /csi
             name: socket-dir
+{{- if (.Values.snapshots | default dict).enabled }}
+      - name: csi-snapshotter
+        image: {{ .Values.sidecarImages.snapshotter }}
+        imagePullPolicy: IfNotPresent
+        args:
+          - --v=5
+          - --csi-address=/csi/csi.sock
+          # Every node snapshots only its own VG, which needs distributed snapshotting in the snapshot-controller.
+          - --node-deployment
+{{- with .Values.snapshots.timeout }}
+          - --timeout={{ . }}
+{{- end }}
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: spec.nodeName
+        securityContext:
+          readOnlyRootFilesystem: true
+          privileged: true
+        volumeMounts:
+          - mountPath: /csi
+            name: socket-dir
+{{- end }}
       # Node Plugin
       - name: node-driver-registrar
         args:

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -15,6 +16,12 @@ const (
 	linearType  = "linear"
 	stripedType = "striped"
 	mirrorType  = "mirror"
+
+	fsTypeXFS         = "xfs"
+	mountOptionNoUUID = "nouuid"
+
+	umountNotMountedMessage   = "not mounted"
+	umountNoMountPointMessage = "no mount point specified"
 )
 
 type vgReport struct {
@@ -90,6 +97,11 @@ func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mou
 		return string(out), fmt.Errorf("unable to create mount directory for lv:%s err:%w", lvname, err)
 	}
 
+	// Restored volumes share the source's filesystem UUID, which xfs refuses to mount twice.
+	if fsType == fsTypeXFS && !slices.Contains(mountOptions, mountOptionNoUUID) {
+		mountOptions = append(slices.Clone(mountOptions), mountOptionNoUUID)
+	}
+
 	// --make-shared is required that this mount is visible outside this container.
 	mountArgs := []string{"--make-shared", "-t", fsType}
 	if len(mountOptions) > 0 {
@@ -143,10 +155,20 @@ func BindMountLV(log *slog.Logger, lvname, mountPath string, devicePath string) 
 func UmountLV(log *slog.Logger, targetPath string) {
 	cmd := exec.Command("umount", "--lazy", "--force", targetPath)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		//RETURN err ?
-		log.Error("unable to umount", "targetPath", targetPath, "output", string(out), "error", err)
+	if err == nil {
+		return
 	}
+	// Unpublish is idempotent, so a target that is no longer mounted is not an error.
+	if isNotMounted(string(out)) {
+		log.Debug("target already unmounted", "targetPath", targetPath)
+		return
+	}
+	//RETURN err ?
+	log.Error("unable to umount", "targetPath", targetPath, "output", string(out), "error", err)
+}
+
+func isNotMounted(umountOutput string) bool {
+	return strings.Contains(umountOutput, umountNotMountedMessage) || strings.Contains(umountOutput, umountNoMountPointMessage)
 }
 
 // VgExists checks if the given volume group exists
@@ -250,9 +272,28 @@ func CreateVG(log *slog.Logger, name string, devicesPattern string) (string, err
 	return string(out), err
 }
 
+// CreateLVParams describes a logical volume to create.
+type CreateLVParams struct {
+	VG        string
+	Name      string
+	Size      uint64
+	Type      string
+	Integrity bool
+	// Tags are added in addition to VolumeDriverTag.
+	Tags []string
+}
+
 // CreateLV creates the new volume
 // used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
-func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType string, integrity bool) (string, error) {
+func CreateLV(log *slog.Logger, params CreateLVParams) (string, error) {
+	var (
+		vg        = params.VG
+		name      = params.Name
+		size      = params.Size
+		lvmType   = params.Type
+		integrity = params.Integrity
+	)
+
 	if LvExists(log, vg, name) {
 		log.Debug("logicalvolume already exists", "name", name)
 		return name, nil
@@ -300,9 +341,9 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 		}
 	}
 
-	tags := []string{"lv.metal-stack.io/csi-lvm-driver"}
+	tags := append([]string{VolumeDriverTag}, params.Tags...)
 	for _, tag := range tags {
-		args = append(args, "--addtag", tag)
+		args = append(args, flagAddTag, tag)
 	}
 	args = append(args, vg)
 	log.Debug("lvcreate", "args", args)
@@ -311,19 +352,14 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 	return string(out), err
 }
 
+// LvExists reports whether the LV exists, logging only real lvs failures and not a missing LV.
 func LvExists(log *slog.Logger, vg string, name string) bool {
-	var (
-		vgname = vg + "/" + name
-		cmd    = exec.Command("lvs", vgname, "--noheadings", "-o", "lv_name")
-	)
-
-	out, err := cmd.CombinedOutput()
+	lv, err := GetLV(log, vg, name)
 	if err != nil {
-		log.Error("unable to list existing volumes", "error", err, "output", string(out))
+		log.Error("unable to list existing volumes", "error", err)
 		return false
 	}
-
-	return name == strings.TrimSpace(string(out))
+	return lv != nil
 }
 
 func ExtendLVS(log *slog.Logger, vg string, name string, size uint64, isBlock bool) (string, error) {

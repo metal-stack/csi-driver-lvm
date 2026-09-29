@@ -16,6 +16,10 @@ provisioner: {{ .Values.lvm.driverName }}
 reclaimPolicy: {{ $storageClass.reclaimPolicy }}
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
+{{- if not (empty $storageClass.mountOptions) }}
+mountOptions:
+{{ $storageClass.mountOptions | toYaml -}}
+{{ end }}
 parameters:
   type: "linear"
 {{ end }}
@@ -37,6 +41,10 @@ provisioner: {{ .Values.lvm.driverName }}
 reclaimPolicy: {{ $storageClass.reclaimPolicy }}
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
+{{- if not (empty $storageClass.mountOptions) }}
+mountOptions:
+{{ $storageClass.mountOptions | toYaml -}}
+{{ end }}
 parameters:
   type: "mirror"
 {{ end }}
@@ -58,6 +66,10 @@ provisioner: {{ .Values.lvm.driverName }}
 reclaimPolicy: {{ $storageClass.reclaimPolicy }}
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
+{{- if not (empty $storageClass.mountOptions) }}
+mountOptions:
+{{ $storageClass.mountOptions | toYaml -}}
+{{ end }}
 parameters:
   type: "striped"
 {{ end }}
@@ -79,6 +91,10 @@ provisioner: {{ .Values.lvm.driverName }}
 reclaimPolicy: {{ $storageClass.reclaimPolicy }}
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
+{{- if not (empty $storageClass.mountOptions) }}
+mountOptions:
+{{ $storageClass.mountOptions | toYaml -}}
+{{ end }}
 parameters:
   type: "linear"
   encryption: "true"
@@ -103,6 +119,10 @@ provisioner: {{ .Values.lvm.driverName }}
 reclaimPolicy: {{ $storageClass.reclaimPolicy }}
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
+{{- if not (empty $storageClass.mountOptions) }}
+mountOptions:
+{{ $storageClass.mountOptions | toYaml -}}
+{{ end }}
 parameters:
   type: "mirror"
   encryption: "true"
@@ -127,6 +147,10 @@ provisioner: {{ .Values.lvm.driverName }}
 reclaimPolicy: {{ $storageClass.reclaimPolicy }}
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
+{{- if not (empty $storageClass.mountOptions) }}
+mountOptions:
+{{ $storageClass.mountOptions | toYaml -}}
+{{ end }}
 parameters:
   type: "striped"
   encryption: "true"

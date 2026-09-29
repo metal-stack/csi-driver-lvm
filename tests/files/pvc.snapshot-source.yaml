@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lvm-pvc-snapshot-source
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-driver-lvm-snapshot-xfs
+  resources:
+    requests:
+      storage: 300Mi

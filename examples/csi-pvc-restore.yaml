@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: csi-pvc-restore
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      # must be at least the size of the snapshot's source volume
+      storage: 20Mi
+  storageClassName: csi-driver-lvm-linear
+  dataSource:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: csi-pvc-snapshot
