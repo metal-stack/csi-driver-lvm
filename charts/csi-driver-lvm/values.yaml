@@ -37,6 +37,23 @@ sidecarImages:
   provisioner: k8s.gcr.io/sig-storage/csi-provisioner:v3.2.1
   registrar: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.5.1
   resizer: k8s.gcr.io/sig-storage/csi-resizer:v1.6.0
+  snapshotter: registry.k8s.io/sig-storage/csi-snapshotter:v8.5.0
+
+provisioner:
+  # restores from snapshots copy data inside CreateVolume, retries continue a running copy
+  timeout: 120s
+
+snapshots:
+  # requires the snapshot CRDs and a snapshot-controller running with --enable-distributed-snapshotting
+  enabled: false
+  timeout: 60s
+  volumeSnapshotClass:
+    create: true
+    name: csi-driver-lvm
+    deletionPolicy: Delete
+    additionalAnnotations: {}
+    # snapshotSizePercent (1-100, default 100) or snapshotSize (e.g. 2Gi) sets the copy-on-write size
+    parameters: {}
 
 kubernetes:
   kubeletPath: /var/lib/kubelet

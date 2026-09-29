@@ -20,3 +20,6 @@ storageClasses:
     enabled: true
   mirrorEncrypted:
     enabled: true
+
+snapshots:
+  enabled: true

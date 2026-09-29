@@ -1,5 +1,24 @@
 #!/usr/bin/env bats -p
 
+@test "deploy snapshot-controller with distributed snapshotting" {
+    run sh -c "kubectl kustomize 'https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.5.0' | kubectl apply -f -"
+    [ "$status" -eq 0 ]
+
+    run sh -c "kubectl -n kube-system kustomize 'https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.5.0' | kubectl apply -f -"
+    [ "$status" -eq 0 ]
+
+    # distributed snapshotting labels each VolumeSnapshotContent with the node of its source volume
+    run kubectl patch clusterrole snapshot-controller-runner --type=json \
+        -p '[{"op":"add","path":"/rules/-","value":{"apiGroups":[""],"resources":["nodes"],"verbs":["get","list","watch"]}}]'
+    [ "$status" -eq 0 ]
+    run kubectl -n kube-system patch deploy snapshot-controller --type=json \
+        -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--enable-distributed-snapshotting"}]'
+    [ "$status" -eq 0 ]
+
+    run kubectl -n kube-system rollout status deploy/snapshot-controller --timeout=120s
+    [ "$status" -eq 0 ]
+}
+
 @test "deploy csi-lvm-controller" {
     run kubectl create namespace csi-driver-lvm || true
     run helm upgrade --debug --install --namespace csi-driver-lvm csi-driver-lvm /charts/csi-driver-lvm --values values.yaml --wait --timeout=120s
@@ -618,6 +637,203 @@
 
 @test "delete encryption secret" {
     run kubectl delete -f files/secret.encryption.yaml --wait --timeout=10s
+    [ "$status" -eq 0 ]
+}
+
+@test "create xfs pvc for snapshots" {
+    run kubectl apply -f files/storageclass.snapshot-xfs.yaml
+    [ "$status" -eq 0 ]
+
+    run kubectl apply -f files/pvc.snapshot-source.yaml -f files/pod.snapshot-source.yaml
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=condition=Ready -f files/pod.snapshot-source.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+
+    run kubectl exec volume-snapshot-source -- sh -c 'echo before-snapshot > /data/data.txt && sync'
+    [ "$status" -eq 0 ]
+}
+
+@test "create volume snapshot" {
+    run kubectl apply -f files/volumesnapshot.yaml
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.readyToUse}'=true -f files/volumesnapshot.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+
+    # the snapshot content must be handled by the node that holds the source volume
+    NODE=$(kubectl get pod volume-snapshot-source -o jsonpath='{.spec.nodeName}')
+    CONTENT=$(kubectl get volumesnapshot lvm-snapshot -o jsonpath='{.status.boundVolumeSnapshotContentName}')
+    MANAGED_BY=$(kubectl get volumesnapshotcontent "$CONTENT" -o jsonpath='{.metadata.labels.snapshot\.storage\.kubernetes\.io/managed-by}')
+    [ "$MANAGED_BY" = "$NODE" ]
+}
+
+@test "write to source volume after snapshot" {
+    run kubectl exec volume-snapshot-source -- sh -c 'echo after-snapshot > /data/data.txt && echo new > /data/new.txt && sync'
+    [ "$status" -eq 0 ]
+}
+
+@test "restore snapshot into larger pvc on the same node" {
+    NODE=$(kubectl get pod volume-snapshot-source -o jsonpath='{.spec.nodeName}')
+
+    run kubectl apply -f files/pvc.snapshot-restore.yaml
+    [ "$status" -eq 0 ]
+
+    run sh -c "sed 's/SNAPSHOT_NODE/$NODE/' files/pod.snapshot-restore.yaml | kubectl apply -f -"
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=condition=Ready pod/volume-snapshot-restore --timeout=120s
+    [ "$status" -eq 0 ]
+}
+
+@test "restored volume contains snapshot-time data only" {
+    run kubectl exec volume-snapshot-restore -- cat /data/data.txt
+    [ "$status" -eq 0 ]
+    [ "$output" = "before-snapshot" ]
+
+    run kubectl exec volume-snapshot-restore -- test -e /data/new.txt
+    [ "$status" -ne 0 ]
+}
+
+@test "restored xfs filesystem is grown and mounted next to its source" {
+    # xfs refuses duplicate UUIDs unless mounted with nouuid, both pods run on the same node
+    run kubectl exec volume-snapshot-restore -- sh -c 'grep " /data " /proc/mounts'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *nouuid* ]]
+
+    SIZE=$(kubectl exec volume-snapshot-restore -- df -Pm /data | awk 'NR==2 {print $2}')
+    [ "$SIZE" -gt 400 ]
+}
+
+@test "deleting snapshot source volume is refused while the snapshot exists" {
+    PV=$(kubectl get pvc lvm-pvc-snapshot-source -o jsonpath='{.spec.volumeName}')
+    echo "$PV" > /tmp/snapshot_source_pv.txt
+
+    run kubectl delete -f files/pod.snapshot-source.yaml --grace-period=0 --wait --timeout=60s
+    [ "$status" -eq 0 ]
+    run kubectl delete -f files/pvc.snapshot-source.yaml --wait=false
+    [ "$status" -eq 0 ]
+
+    end=$((SECONDS+60))
+    while [ $SECONDS -lt $end ]; do
+        EVENTS=$(kubectl get events --field-selector involvedObject.name="$PV",reason=VolumeFailedDelete -o jsonpath='{.items[*].message}')
+        [[ "$EVENTS" == *"still has snapshots"* ]] && break
+        sleep 2
+    done
+    [[ "$EVENTS" == *"still has snapshots"* ]]
+
+    run kubectl get pv "$PV"
+    [ "$status" -eq 0 ]
+}
+
+@test "delete volume snapshot releases the source volume" {
+    PV=$(cat /tmp/snapshot_source_pv.txt)
+
+    run kubectl delete -f files/volumesnapshot.yaml --wait --timeout=60s
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=delete pv/"$PV" --timeout=120s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete restored volume" {
+    run kubectl delete pod volume-snapshot-restore --grace-period=0 --wait --timeout=60s
+    [ "$status" -eq 0 ]
+    run kubectl delete -f files/pvc.snapshot-restore.yaml --wait --timeout=60s
+    [ "$status" -eq 0 ]
+    run kubectl delete -f files/storageclass.snapshot-xfs.yaml
+    [ "$status" -eq 0 ]
+}
+
+@test "create block pvc for snapshots" {
+    run kubectl apply -f files/pvc.snapshot-block-source.yaml -f files/pod.snapshot-block-source.yaml
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=condition=Ready -f files/pod.snapshot-block-source.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+
+    run kubectl exec volume-snapshot-block-source -- sh -c 'dd if=/dev/urandom of=/dev/xvda bs=1M count=50 conv=fsync'
+    [ "$status" -eq 0 ]
+
+    kubectl exec volume-snapshot-block-source -- sh -c 'head -c 104857600 /dev/xvda | md5sum' > /tmp/block_snapshot_md5.txt
+    [ -s /tmp/block_snapshot_md5.txt ]
+}
+
+@test "create block volume snapshot" {
+    run kubectl apply -f files/volumesnapshot.block.yaml
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=jsonpath='{.status.readyToUse}'=true -f files/volumesnapshot.block.yaml --timeout=60s
+    [ "$status" -eq 0 ]
+}
+
+@test "overwrite block source volume after snapshot" {
+    run kubectl exec volume-snapshot-block-source -- sh -c 'dd if=/dev/urandom of=/dev/xvda bs=1M count=50 conv=fsync'
+    [ "$status" -eq 0 ]
+
+    SOURCE_MD5=$(kubectl exec volume-snapshot-block-source -- sh -c 'head -c 104857600 /dev/xvda | md5sum')
+    [ "$SOURCE_MD5" != "$(cat /tmp/block_snapshot_md5.txt)" ]
+}
+
+@test "restore block snapshot into larger pvc" {
+    NODE=$(kubectl get pod volume-snapshot-block-source -o jsonpath='{.spec.nodeName}')
+
+    run kubectl apply -f files/pvc.snapshot-block-restore.yaml
+    [ "$status" -eq 0 ]
+
+    run sh -c "sed 's/SNAPSHOT_NODE/$NODE/' files/pod.snapshot-block-restore.yaml | kubectl apply -f -"
+    [ "$status" -eq 0 ]
+
+    run kubectl wait --for=condition=Ready pod/volume-snapshot-block-restore --timeout=120s
+    [ "$status" -eq 0 ]
+}
+
+@test "restored block volume contains snapshot-time data and has the requested size" {
+    RESTORED_MD5=$(kubectl exec volume-snapshot-block-restore -- sh -c 'head -c 104857600 /dev/xvda | md5sum')
+    [ "$RESTORED_MD5" = "$(cat /tmp/block_snapshot_md5.txt)" ]
+
+    run kubectl exec volume-snapshot-block-restore -- blockdev --getsize64 /dev/xvda
+    [ "$status" -eq 0 ]
+    [ "$output" -eq 209715200 ]
+}
+
+@test "block snapshot cannot be restored as a filesystem volume" {
+    NODE=$(kubectl get pod volume-snapshot-block-source -o jsonpath='{.spec.nodeName}')
+
+    run kubectl apply -f files/pvc.snapshot-block-to-fs.yaml
+    [ "$status" -eq 0 ]
+    run sh -c "sed 's/SNAPSHOT_NODE/$NODE/' files/pod.snapshot-block-to-fs.yaml | kubectl apply -f -"
+    [ "$status" -eq 0 ]
+
+    end=$((SECONDS+60))
+    while [ $SECONDS -lt $end ]; do
+        EVENTS=$(kubectl get events --field-selector involvedObject.name=lvm-pvc-snapshot-block-to-fs,reason=ProvisioningFailed -o jsonpath='{.items[*].message}')
+        [[ "$EVENTS" == *"cannot be restored as a filesystem volume"* ]] && break
+        sleep 2
+    done
+    [[ "$EVENTS" == *"cannot be restored as a filesystem volume"* ]]
+
+    run kubectl get pvc lvm-pvc-snapshot-block-to-fs -o jsonpath='{.status.phase}'
+    [ "$output" = "Pending" ]
+
+    run kubectl delete pod volume-snapshot-block-to-fs --grace-period=0 --wait --timeout=60s
+    [ "$status" -eq 0 ]
+    run kubectl delete -f files/pvc.snapshot-block-to-fs.yaml --wait --timeout=60s
+    [ "$status" -eq 0 ]
+}
+
+@test "delete block snapshot volumes" {
+    run kubectl delete pod volume-snapshot-block-restore --grace-period=0 --wait --timeout=60s
+    [ "$status" -eq 0 ]
+    run kubectl delete -f files/pvc.snapshot-block-restore.yaml --wait --timeout=60s
+    [ "$status" -eq 0 ]
+
+    run kubectl delete -f files/volumesnapshot.block.yaml --wait --timeout=60s
+    [ "$status" -eq 0 ]
+
+    run kubectl delete -f files/pod.snapshot-block-source.yaml --grace-period=0 --wait --timeout=60s
+    [ "$status" -eq 0 ]
+    run kubectl delete -f files/pvc.snapshot-block-source.yaml --wait --timeout=60s
     [ "$status" -eq 0 ]
 }
 
