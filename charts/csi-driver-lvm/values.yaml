@@ -38,6 +38,14 @@ sidecarImages:
   registrar: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.5.1
   resizer: k8s.gcr.io/sig-storage/csi-resizer:v1.6.0
 
+resources:
+  plugin: {}
+  attacher: {}
+  livenessprobe: {}
+  provisioner: {}
+  registrar: {}
+  resizer: {}
+
 kubernetes:
   kubeletPath: /var/lib/kubelet
 
