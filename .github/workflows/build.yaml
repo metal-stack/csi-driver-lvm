@@ -23,13 +23,13 @@ jobs:
         [
           {"platform": "linux/amd64", "goos": "linux", "goarch": "amd64", "runner": "ubuntu-latest"},
           {"platform": "linux/arm64", "goos": "linux", "goarch": "arm64", "runner": "ubuntu-26.04-arm"},
-          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "runner": "ubuntu-26.04-arm"},
+          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "runner": "ubuntu-26.04-arm"}
         ]
       test: false
       build-command: make lvmplugin
       dockerfile: cmd/lvmplugin/Dockerfile
       artifact-files: |
-        bin/lvmplugin-*
+        bin/lvmplugin-linux-*
 
   go-build-controller:
     uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@v1
@@ -39,7 +39,7 @@ jobs:
         [
           {"platform": "linux/amd64", "goos": "linux", "goarch": "amd64", "runner": "ubuntu-latest"},
           {"platform": "linux/arm64", "goos": "linux", "goarch": "arm64", "runner": "ubuntu-26.04-arm"},
-          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "runner": "ubuntu-26.04-arm"},
+          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "runner": "ubuntu-26.04-arm"}
         ]
       lint: false
       test: false
@@ -47,7 +47,7 @@ jobs:
       dockerfile:  cmd/controller/Dockerfile
       image-name: ${{ github.repository }}-controller
       artifact-files: |
-        bin/controller-*
+        bin/controller-linux-*
 
   test:
     name: Test
