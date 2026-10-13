@@ -4,9 +4,10 @@ GOARM ?=
 CGO_ENABLED ?= 0
 TAGS := -tags 'osusergo netgo static_build'
 
-PLATFORM := $(GOOS)/$(GOARCH)$(if $(GOARM),/v$(GOARM))
-BINARY_LVMPLUGIN := $(PLATFORM)/lvmplugin
-BINARY_CONTROLLER:= $(PLATFORM)/controller
+PLATFORM := $(GOOS)-$(GOARCH)$(if $(GOARM),-v$(GOARM))
+
+BINARY_LVMPLUGIN := lvmplugin-$(PLATFORM)
+BINARY_CONTROLLER:= controller-$(PLATFORM)
 
 GO111MODULE := on
 KUBECONFIG := $(shell pwd)/.kubeconfig
@@ -35,11 +36,7 @@ else
   DOCKER_TTY_ARG=t
 endif
 
-ifeq ($(CGO_ENABLED),1)
-ifeq ($(GOOS),linux)
-	LINKMODE := -linkmode external -extldflags '-static -s -w'
-endif
-endif
+
 
 LINKMODE := $(LINKMODE) \
 		 -X 'github.com/metal-stack/v.Version=$(VERSION)' \

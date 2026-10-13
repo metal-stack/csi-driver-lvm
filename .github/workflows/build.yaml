@@ -1,0 +1,78 @@
+---
+name: metal-stack component release
+on:
+  pull_request:
+    branches:
+      - master
+  release:
+    types:
+      - published
+  push:
+    branches:
+      - master
+
+jobs:
+  draft:
+    uses: metal-stack/actions-common/.github/workflows/release-drafter.yaml@v1
+
+  go-build-plugin:
+    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@v1
+    secrets: inherit
+    with:
+      platforms: |
+        [
+          {"platform": "linux/amd64", "goos": "linux", "goarch": "amd64", "runner": "ubuntu-latest"},
+          {"platform": "linux/arm64", "goos": "linux", "goarch": "arm64", "runner": "ubuntu-26.04-arm"},
+          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "goarm": "7", "runner": "ubuntu-26.04-arm"}
+        ]
+      test: false
+      build-command: make lvmplugin
+      dockerfile: cmd/lvmplugin/Dockerfile
+      artifact-name: lvmplugin
+      artifact-files: |
+        bin/lvmplugin-linux-*
+
+  go-build-controller:
+    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@v1
+    secrets: inherit
+    with:
+      platforms: |
+        [
+          {"platform": "linux/amd64", "goos": "linux", "goarch": "amd64", "runner": "ubuntu-latest"},
+          {"platform": "linux/arm64", "goos": "linux", "goarch": "arm64", "runner": "ubuntu-26.04-arm"},
+          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "goarm": "7", "runner": "ubuntu-26.04-arm"}
+        ]
+      lint: false
+      test: false
+      build-command: make controller
+      dockerfile:  cmd/controller/Dockerfile
+      image-name: ${{ github.repository }}-controller
+      artifact-name: controller
+      artifact-files: |
+        bin/controller-linux-*
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+
+    - name: load modules for dm-raid and dm-integrity
+      run: lsmod && sudo modprobe dm-raid && sudo modprobe dm-integrity && lsmod
+
+    - name: Setup Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: 'go.mod'
+
+    - name: Create k8s Kind Cluster
+      uses: helm/kind-action@v1
+      with:
+        install_only: true
+
+    - name: Test
+      run: |
+        make test
+        make test-cleanup
