@@ -16,7 +16,7 @@ jobs:
     uses: metal-stack/actions-common/.github/workflows/release-drafter.yaml@v1
 
   go-build-plugin:
-    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@goarm
+    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@v1
     secrets: inherit
     with:
       platforms: |
@@ -33,7 +33,7 @@ jobs:
         bin/lvmplugin-linux-*
 
   go-build-controller:
-    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@goarm
+    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@v1
     secrets: inherit
     with:
       platforms: |
