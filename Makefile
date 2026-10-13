@@ -4,11 +4,7 @@ GOARM ?=
 CGO_ENABLED ?= 0
 TAGS := -tags 'osusergo netgo static_build'
 
-ifeq ($(GOARCH),arm)
-PLATFORM := $(GOOS)-$(GOARCH)-v$(GOARM)
-else
-PLATFORM := $(GOOS)-$(GOARCH)
-endif
+PLATFORM := $(GOOS)-$(GOARCH)$(if $(GOARM),-v$(GOARM))
 
 BINARY_LVMPLUGIN := lvmplugin-$(PLATFORM)
 BINARY_CONTROLLER:= controller-$(PLATFORM)

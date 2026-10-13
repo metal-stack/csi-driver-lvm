@@ -16,14 +16,14 @@ jobs:
     uses: metal-stack/actions-common/.github/workflows/release-drafter.yaml@v1
 
   go-build-plugin:
-    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@v1
+    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@goarm
     secrets: inherit
     with:
       platforms: |
         [
           {"platform": "linux/amd64", "goos": "linux", "goarch": "amd64", "runner": "ubuntu-latest"},
           {"platform": "linux/arm64", "goos": "linux", "goarch": "arm64", "runner": "ubuntu-26.04-arm"},
-          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "runner": "ubuntu-26.04-arm"}
+          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "goarm": "7", "runner": "ubuntu-26.04-arm"}
         ]
       test: false
       build-command: make lvmplugin
@@ -32,14 +32,14 @@ jobs:
         bin/lvmplugin-linux-*
 
   go-build-controller:
-    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@v1
+    uses: metal-stack/actions-common/.github/workflows/go-build-multiarch.yaml@goarm
     secrets: inherit
     with:
       platforms: |
         [
           {"platform": "linux/amd64", "goos": "linux", "goarch": "amd64", "runner": "ubuntu-latest"},
           {"platform": "linux/arm64", "goos": "linux", "goarch": "arm64", "runner": "ubuntu-26.04-arm"},
-          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "runner": "ubuntu-26.04-arm"}
+          {"platform": "linux/arm/v7", "goos": "linux", "goarch": "arm", "goarm": "7", "runner": "ubuntu-26.04-arm"}
         ]
       lint: false
       test: false
