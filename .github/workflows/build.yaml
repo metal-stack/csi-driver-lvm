@@ -28,6 +28,7 @@ jobs:
       test: false
       build-command: make lvmplugin
       dockerfile: cmd/lvmplugin/Dockerfile
+      artifact-name: lvmplugin
       artifact-files: |
         bin/lvmplugin-linux-*
 
@@ -46,6 +47,7 @@ jobs:
       build-command: make controller
       dockerfile:  cmd/controller/Dockerfile
       image-name: ${{ github.repository }}-controller
+      artifact-name: controller
       artifact-files: |
         bin/controller-linux-*
 
