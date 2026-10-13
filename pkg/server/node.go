@@ -61,6 +61,10 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	// if ephemeral is specified, create volume here
 	if ephemeralVolume {
+		if err := validateStripeSize(req.GetVolumeContext()["type"], req.GetVolumeContext()["stripeSize"]); err != nil {
+			return nil, err
+		}
+
 		size, err := parseSize(req.GetVolumeContext()["size"])
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -73,7 +77,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, req.GetVolumeContext()["type"], false)
+		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, req.GetVolumeContext()["type"], false, req.GetVolumeContext()["stripeSize"])
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}
@@ -133,7 +137,8 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	} else if req.GetVolumeCapability().GetMount() != nil {
 		mountCap := req.GetVolumeCapability().GetMount()
-		output, err := lvm.MountLV(d.log, volID, targetPath, mountCap.GetFsType(), devicePath, mountCap.GetMountFlags())
+		mkfsOptions := req.GetVolumeContext()["mkfsOptions"]
+		output, err := lvm.MountLV(d.log, volID, targetPath, mountCap.GetFsType(), devicePath, mountCap.GetMountFlags(), mkfsOptions)
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
 		}
