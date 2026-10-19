@@ -36,6 +36,9 @@ type Driver struct {
 	maxVolumesPerNode int64
 	devicesPattern    string
 	vgName            string
+
+	volumeLocks *idLocker
+	restores    *restoreTracker
 }
 
 func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWritePath string, ephemeral bool, maxVolumesPerNode int64, version string, devicesPattern string, vgName string) (*Driver, error) {
@@ -89,6 +92,8 @@ func NewDriver(log *slog.Logger, driverName, nodeId, endpoint string, hostWriteP
 		maxVolumesPerNode: maxVolumesPerNode,
 		devicesPattern:    devicesPattern,
 		vgName:            vgName,
+		volumeLocks:       newIDLocker(),
+		restores:          newRestoreTracker(),
 	}, nil
 }
 

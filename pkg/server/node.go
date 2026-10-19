@@ -73,7 +73,12 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, req.GetVolumeContext()["type"], false)
+		output, err = lvm.CreateLV(d.log, lvm.CreateLVParams{
+			VG:   d.vgName,
+			Name: volID,
+			Size: size,
+			Type: req.GetVolumeContext()["type"],
+		})
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}
@@ -136,6 +141,9 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		output, err := lvm.MountLV(d.log, volID, targetPath, mountCap.GetFsType(), devicePath, mountCap.GetMountFlags())
 		if err != nil {
 			return nil, fmt.Errorf("unable to mount lv: %w output:%s", err, output)
+		}
+		if err := d.growFilesystem(devicePath, targetPath); err != nil {
+			return nil, err
 		}
 		// FIXME: VolumeCapability is a struct and not the size
 		d.log.Info("mounted lv", "id", volID, "size", req.GetVolumeCapability(), "vg", d.vgName, "devices", d.devicesPattern, "created at", targetPath)
@@ -354,6 +362,17 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		return nil, status.Error(codes.InvalidArgument, "volume path not provided")
 	}
 
+	release, err := d.volumeLocks.acquire(volID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	// LVM cannot resize a snapshot origin, and Aborted keeps kubelet retrying where FailedPrecondition would not.
+	if err := d.ensureNoSnapshots(volID, codes.Aborted); err != nil {
+		return nil, err
+	}
+
 	info, err := os.Stat(volPath)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "could not get file information from %s: %v", volPath, err)
@@ -404,6 +423,26 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		CapacityBytes: capacity,
 	}, nil
 
+}
+
+// growFilesystem expands a mounted filesystem that is smaller than its device, e.g. after a larger restore.
+func (d *Driver) growFilesystem(devicePath, mountPath string) error {
+	resizer := mountutils.NewResizeFs(utilexec.New())
+
+	needResize, err := resizer.NeedResize(devicePath, mountPath)
+	if err != nil {
+		return fmt.Errorf("unable to check if filesystem on %s needs resize: %w", devicePath, err)
+	}
+	if !needResize {
+		return nil
+	}
+
+	d.log.Info("growing filesystem to device size", "device", devicePath, "mount", mountPath)
+
+	if _, err := resizer.Resize(devicePath, mountPath); err != nil {
+		return fmt.Errorf("unable to resize filesystem on %s: %w", devicePath, err)
+	}
+	return nil
 }
 
 func parseSize(val string) (uint64, error) {

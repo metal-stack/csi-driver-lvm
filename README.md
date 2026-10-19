@@ -11,7 +11,7 @@ This CSI driver is derived from [csi-driver-host-path](https://github.com/kubern
 > [!WARNING]
 > Note that there is always an inevitable risk of data loss when working with local volumes. For this reason, be sure to back up your data or implement proper data replication methods when using this CSI driver.
 
-## Currently it can create, delete, mount, unmount and resize block and filesystem volumes via lvm ##
+## Currently it can create, delete, mount, unmount, resize, snapshot and restore block and filesystem volumes via lvm ##
 
 For the special case of block volumes, the filesystem-expansion has to be performed by the app using the block device
 
@@ -105,13 +105,87 @@ volumes:
         name: csi-lvm-encryption-secret
 ```
 
+## Snapshots ##
+
+csi-driver-lvm supports `VolumeSnapshot`s as thick copy-on-write LVM snapshots, and restoring them into new volumes. Restoring never merges the snapshot back into its source: it creates a new LV and copies the snapshot's data into it, leaving both the snapshot and the source volume untouched.
+
+### Prerequisites ###
+
+Snapshots need the snapshot CRDs and the `snapshot-controller` from [external-snapshotter](https://github.com/kubernetes-csi/external-snapshotter), installed once per cluster:
+
+```bash
+VER=v8.5.0
+kubectl kustomize "https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=${VER}" | kubectl create -f -
+kubectl -n kube-system kustomize "https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=${VER}" | kubectl create -f -
+```
+
+Each volume lives in the volume group of a single node, so only the driver on that node can snapshot it. The `csi-snapshotter` sidecar therefore runs in every plugin pod with `--node-deployment` and only handles snapshots labeled for its own node. The `snapshot-controller` only sets that label when it runs with distributed snapshotting enabled, which needs a flag and read access to nodes:
+
+```bash
+kubectl -n kube-system patch deploy snapshot-controller --type=json \
+  -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--enable-distributed-snapshotting"}]'
+kubectl patch clusterrole snapshot-controller-runner --type=json \
+  -p '[{"op":"add","path":"/rules/-","value":{"apiGroups":[""],"resources":["nodes"],"verbs":["get","list","watch"]}}]'
+```
+
+Without distributed snapshotting, `VolumeSnapshot`s stay `readyToUse: false` forever.
+
+### Setup ###
+
+Enable snapshots in your Helm values. This adds the `csi-snapshotter` sidecar, its RBAC and a `VolumeSnapshotClass` named `csi-driver-lvm`:
+
+```yaml
+snapshots:
+  enabled: true
+```
+
+Then snapshot a PVC and restore it, see [examples/csi-volumesnapshot.yaml](examples/csi-volumesnapshot.yaml) and [examples/csi-pvc-restore.yaml](examples/csi-pvc-restore.yaml):
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: csi-pvc-restore
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Mi
+  storageClassName: csi-driver-lvm-linear
+  dataSource:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: csi-pvc-snapshot
+```
+
+### Snapshot size ###
+
+A thick snapshot reserves copy-on-write space in the volume group. It becomes permanently invalid once more data changes on the source than fits into that space. The size is set by `VolumeSnapshotClass` parameters:
+
+| Parameter             | Description                                                                                          |
+|-----------------------|------------------------------------------------------------------------------------------------------|
+| `snapshotSizePercent` | Copy-on-write space relative to the source volume, `1` to `100`. Defaults to `100`, which can never overflow. |
+| `snapshotSize`        | Absolute copy-on-write space, e.g. `2Gi`. Takes precedence over `snapshotSizePercent`.              |
+
+An invalid snapshot is reported by `ListSnapshots` with `readyToUse: false` and cannot be restored. The `VolumeSnapshot` object itself keeps `readyToUse: true`, because the snapshotter does not re-check snapshots that were ready once.
+
+### Caveats ###
+
+- **Node locality**: a snapshot can only be restored on the node that holds it. Pin pods using a restored PVC to that node, e.g. with a `nodeSelector`. If the scheduler picks another node, provisioning fails with `ResourceExhausted` and the claim is rescheduled.
+- **Consistency**: snapshots are crash-consistent only. Quiesce the application (e.g. with pre-snapshot hooks) before creating a `VolumeSnapshot` if you need application consistency.
+- **Source volumes with snapshots**: deleting a volume that still has snapshots is refused, because LVM would remove the snapshots with it. Expanding such a volume waits until its snapshots are deleted, because LVM cannot resize an active snapshot origin.
+- **Write performance**: every write to a volume with thick snapshots also copies the old block, so keep snapshots only as long as needed.
+- **Restore duration**: a restore copies the whole source volume inside `CreateVolume`. The provisioner timeout is raised to `120s` (`provisioner.timeout`), and a copy that takes longer continues in the background across provisioner retries. A copy interrupted by a driver restart starts over.
+- **Filesystems**: a restored volume keeps the filesystem UUID of its source, so xfs volumes are always mounted with `nouuid`. A restore larger than its snapshot has its filesystem grown on mount.
+- **Encryption**: a snapshot of an encrypted volume contains LUKS ciphertext. Restore it through an encrypted StorageClass that uses the same passphrase secret.
+- **Volume mode**: a snapshot of a block volume can only be restored as a block volume, and a snapshot of a filesystem volume only as a filesystem volume. Snapshots of volumes created before this check was added are not checked.
+- **Cloning**: PVC-to-PVC cloning is not supported.
+- **ListSnapshots**: each plugin pod only lists the snapshots of its own node.
+
 ## Migration ##
 
 If you want to migrate your existing PVC to / from csi-driver-lvm, you can use [korb](https://github.com/BeryJu/korb).
-
-### Todo ###
-
-* implement CreateSnapshot(), ListSnapshots(), DeleteSnapshot()
 
 
 ### Test ###

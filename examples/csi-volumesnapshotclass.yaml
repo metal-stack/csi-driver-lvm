@@ -1,0 +1,11 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: csi-driver-lvm
+driver: lvm.csi.metal-stack.io
+deletionPolicy: Delete
+parameters:
+  # copy-on-write size relative to the source volume, 100 (default) can never overflow
+  snapshotSizePercent: "100"
+  # or an absolute copy-on-write size, takes precedence over snapshotSizePercent
+  # snapshotSize: "1Gi"

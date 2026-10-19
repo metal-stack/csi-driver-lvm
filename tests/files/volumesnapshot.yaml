@@ -1,0 +1,8 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: lvm-snapshot
+spec:
+  volumeSnapshotClassName: csi-driver-lvm
+  source:
+    persistentVolumeClaimName: lvm-pvc-snapshot-source

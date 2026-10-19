@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volume-snapshot-block-to-fs
+spec:
+  # a snapshot can only be restored on its node, SNAPSHOT_NODE is replaced by the test
+  nodeSelector:
+    kubernetes.io/hostname: SNAPSHOT_NODE
+  containers:
+  - name: volume-snapshot-block-to-fs
+    image: alpine
+    imagePullPolicy: IfNotPresent
+    command:
+      - /bin/sh
+      - -c
+      - sleep 1000000
+    securityContext:
+      allowPrivilegeEscalation: false
+      runAsNonRoot: true
+      runAsUser: 10014
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+    volumeMounts:
+      - name: block
+        mountPath: /data
+    resources:
+      limits:
+        cpu: 100m
+        memory: 100M
+  volumes:
+  - name: block
+    persistentVolumeClaim:
+      claimName: lvm-pvc-snapshot-block-to-fs

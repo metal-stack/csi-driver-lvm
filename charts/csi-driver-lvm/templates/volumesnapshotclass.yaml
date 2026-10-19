@@ -1,0 +1,23 @@
+{{- $snapshots := .Values.snapshots | default dict }}
+{{- $class := $snapshots.volumeSnapshotClass | default dict }}
+{{- if and $snapshots.enabled $class.create (.Capabilities.APIVersions.Has "snapshot.storage.k8s.io/v1") }}
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: {{ $class.name }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+{{- with $class.additionalAnnotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+{{- end }}
+driver: {{ .Values.lvm.driverName }}
+deletionPolicy: {{ $class.deletionPolicy }}
+{{- with $class.parameters }}
+parameters:
+{{- range $key, $value := . }}
+  {{ $key }}: {{ $value | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
