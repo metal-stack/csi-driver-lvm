@@ -50,6 +50,11 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Errorf(codes.Internal, "lvmType is incorrect: %s", lvmType)
 	}
 
+	stripeSize := req.GetParameters()["stripeSize"]
+	if err := validateStripeSize(lvmType, stripeSize); err != nil {
+		return nil, err
+	}
+
 	if value, ok := req.GetParameters()["integrity"]; ok {
 		var err error
 		integrity, err = strconv.ParseBool(value)
@@ -62,7 +67,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	requiredBytes := req.GetCapacityRange().GetRequiredBytes()
 
-	_, err := lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(requiredBytes), lvmType, integrity)
+	_, err := lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(requiredBytes), lvmType, integrity, stripeSize)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create lv %s: %w", req.GetName(), err)
 	}

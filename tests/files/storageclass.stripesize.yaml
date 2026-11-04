@@ -1,0 +1,13 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-driver-lvm-stripesize
+parameters:
+  type: striped
+  # 256k is deliberately not LVM's 64k default, so the test can tell the
+  # parameter actually reached "lvcreate --stripesize".
+  stripeSize: "256k"
+provisioner: lvm.csi.metal-stack.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer

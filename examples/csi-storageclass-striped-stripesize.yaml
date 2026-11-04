@@ -1,0 +1,15 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-striped-stripesize
+provisioner: lvm.csi.metal-stack.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "striped"
+  # Optional: LVM stripe size, passed verbatim to "lvcreate --stripesize".
+  # Must be a power of two (e.g. "64k", "256k", "1m"). Applies to striped volumes
+  # only, and only when the node's volume group has at least two physical volumes;
+  # otherwise it is ignored.
+  stripeSize: "64k"

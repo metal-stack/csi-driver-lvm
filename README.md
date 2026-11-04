@@ -49,6 +49,44 @@ Now you can use one of following storageClasses:
 
 To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclasses, set helm-chart value `compat03x=true`.
 
+## Stripe size ##
+
+For `striped` volumes you can optionally set the LVM stripe size via the `stripeSize` parameter on the StorageClass. The value is passed to `lvcreate --stripesize` and must be a power of two of at least 4 KiB (e.g. `64k`, `256k`, `1m`); values without a suffix are in KiB. Invalid values are rejected during provisioning, with the error visible in the PVC events. The parameter is ignored for other volume types. For `striped` volumes it is validated even with a single physical volume, but will only take effect when the node's volume group has at least two physical volumes.
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-striped-stripesize
+provisioner: lvm.csi.metal-stack.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "striped"
+  stripeSize: "64k"
+```
+
+## mkfs options ##
+
+You can pass extra options to the `mkfs` call that formats a volume via the `mkfsOptions` parameter on the StorageClass. The value is split on whitespace and passed verbatim to `mkfs.<fsType>` before the device argument, so the accepted options depend on the filesystem (`fsType`). The options only take effect when the volume is first formatted; they are ignored for an already-formatted volume.
+
+This pairs well with striped volumes (see *Stripe size* above): for `ext4` you can align the filesystem to the LVM stripe geometry via `stride`/`stripe_width`.
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-lvm-sc-striped-mkfsoptions
+provisioner: lvm.csi.metal-stack.io
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "striped"
+  mkfsOptions: "-E stride=64,stripe_width=384"
+```
+
 ## Encryption ##
 
 csi-driver-lvm supports LUKS2 encryption for volumes at rest. When encryption is enabled, the LVM logical volume is formatted with LUKS2 and a dm-crypt mapper device is used transparently for all I/O.

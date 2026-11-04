@@ -1,0 +1,13 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-driver-lvm-mkfsoptions
+parameters:
+  type: linear
+  # Passed verbatim to "mkfs.ext4". A linear LV exposes no stripe topology, so
+  # ext4 would not set these on its own — seeing them proves the option took effect.
+  mkfsOptions: "-E stride=64,stripe_width=384"
+provisioner: lvm.csi.metal-stack.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
