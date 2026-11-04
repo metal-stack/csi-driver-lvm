@@ -168,6 +168,10 @@ spec:
         args:
           - --v=5
           - --csi-address=/csi/csi.sock
+        {{- if .Values.resources.attacher }}
+        resources:
+          {{- toYaml .Values.resources.attacher | nindent 10 }}
+        {{- end }}
         securityContext:
           readOnlyRootFilesystem: true
           privileged: true
@@ -200,6 +204,10 @@ spec:
               fieldRef:
                 apiVersion: v1
                 fieldPath: metadata.name
+        {{- if .Values.resources.provisioner }}
+        resources:
+          {{- toYaml .Values.resources.provisioner | nindent 10 }}
+        {{- end }}
         securityContext:
           readOnlyRootFilesystem: true
           privileged: true
@@ -212,6 +220,10 @@ spec:
         args:
           - -v=5
           - -csi-address=/csi/csi.sock
+        {{- if .Values.resources.resizer }}
+        resources:
+          {{- toYaml .Values.resources.resizer | nindent 10 }}
+        {{- end }}
         securityContext:
           readOnlyRootFilesystem: true
           privileged: true
@@ -232,7 +244,10 @@ spec:
               fieldPath: spec.nodeName
         image: {{ .Values.sidecarImages.registrar }}
         imagePullPolicy: IfNotPresent
-        resources: {}
+        {{- if .Values.resources.registrar }}
+        resources:
+          {{- toYaml .Values.resources.registrar | nindent 10 }}
+        {{- end }}
         securityContext:
           readOnlyRootFilesystem: true
           privileged: true
@@ -276,7 +291,10 @@ spec:
         - containerPort: 9898
           name: healthz
           protocol: TCP
-        resources: {}
+        {{- if .Values.resources.plugin }}
+        resources:
+          {{- toYaml .Values.resources.plugin | nindent 10 }}
+        {{- end }}
         securityContext:
           readOnlyRootFilesystem: true
           privileged: true
@@ -316,7 +334,10 @@ spec:
         - --health-port=9898
         image: {{ .Values.sidecarImages.livenessprobe }}
         imagePullPolicy: IfNotPresent
-        resources: {}
+        {{- if .Values.resources.livenessprobe }}
+        resources:
+          {{- toYaml .Values.resources.livenessprobe | nindent 10 }}
+        {{- end }}
         securityContext:
           readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
