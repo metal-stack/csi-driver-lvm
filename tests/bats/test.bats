@@ -392,7 +392,7 @@
     [[ "$output" == *"type xfs"* ]]
 }
 
-@test "check additionalMkfsParams applied to XFS volume" {
+@test "check stripeSize and additionalMkfsParams applied to striped XFS volume" {
     PV_NAME=$(kubectl get pvc lvm-pvc-mountoptions -o jsonpath='{.spec.volumeName}')
     [ -n "$PV_NAME" ]
     NODE=$(kubectl get pod volume-test-mountoptions -o jsonpath='{.spec.nodeName}')
@@ -400,10 +400,19 @@
     PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
     [ -n "$PLUGIN_POD" ]
 
+    # 256 KiB differs from LVM's default of 64 KiB.
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- lvs --noheadings --nosuffix --units b -o stripe_size "csi-lvm/$PV_NAME"
+    [ "$status" -eq 0 ]
+    [[ "$output" =~ ^[[:space:]]*262144[[:space:]]*$ ]]
+
     run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- xfs_info "/dev/csi-lvm/$PV_NAME"
     [ "$status" -eq 0 ]
     [[ "$output" == *"nrext64=1"* ]]
     [[ "$output" == *"rmapbt=0"* ]]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- xfs_admin -l "/dev/csi-lvm/$PV_NAME"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"test stripe"'* ]]
 }
 
 @test "delete mountOptions pod" {

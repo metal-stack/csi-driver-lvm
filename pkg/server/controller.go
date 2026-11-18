@@ -58,11 +58,16 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 	}
 
+	stripeSize, err := validateStripeSize(lvmType, req.GetParameters()["stripeSize"])
+	if err != nil {
+		return nil, err
+	}
+
 	d.log.Info("creating volume", "name", req.GetName())
 
 	requiredBytes := req.GetCapacityRange().GetRequiredBytes()
 
-	_, err := lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(requiredBytes), lvmType, integrity)
+	_, err = lvm.CreateLV(d.log, d.vgName, req.GetName(), uint64(requiredBytes), lvmType, integrity, stripeSize)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create lv %s: %w", req.GetName(), err)
 	}

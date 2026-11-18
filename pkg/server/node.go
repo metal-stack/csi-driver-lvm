@@ -66,6 +66,12 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	// if ephemeral is specified, create volume here
 	if ephemeralVolume {
+		lvmType := req.GetVolumeContext()["type"]
+		stripeSize, err := validateStripeSize(lvmType, req.GetVolumeContext()["stripeSize"])
+		if err != nil {
+			return nil, err
+		}
+
 		size, err := parseSize(req.GetVolumeContext()["size"])
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -78,7 +84,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 			return nil, fmt.Errorf("unable to create vg: %w output:%s", err, output)
 		}
 
-		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, req.GetVolumeContext()["type"], false)
+		output, err = lvm.CreateLV(d.log, d.vgName, volID, size, lvmType, false, stripeSize)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create lv: %w output:%s", err, output)
 		}
