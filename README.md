@@ -49,6 +49,48 @@ Now you can use one of following storageClasses:
 
 To get the previous old and now deprecated `csi-lvm-sc-linear`, ... storageclasses, set helm-chart value `compat03x=true`.
 
+## Stripe Size ##
+
+Set `parameters.stripeSize` on a StorageClass with `type: striped` to override LVM's
+default stripe size for new volumes. Use a power-of-two size such as `"256k"` or `"1m"`.
+Values without a suffix are in KiB. The minimum is the node's page size (typically
+4 KiB), and LVM may reduce the requested size to the volume group's physical extent size.
+
+Invalid sizes are reported in PVC provisioning events. The parameter is ignored
+for `linear` and `mirror` volumes. A striped volume still falls back to linear if
+the volume group has fewer than two physical volumes, so the size is validated
+but not applied in that case. Inline ephemeral volumes can set `stripeSize` in
+`volumeAttributes`; invalid sizes appear in the Pod's mount events.
+
+See the [striped StorageClass example](examples/csi-storageclass-striped-stripesize.yaml).
+
+## Filesystem Formatting Options ##
+
+Set `parameters.additionalMkfsParams` on a StorageClass to pass additional arguments to
+`mkfs.<fstype>` when a new volume is formatted:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-driver-lvm-striped-xfs
+provisioner: lvm.csi.metal-stack.io
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  type: striped
+  stripeSize: "256k"
+  csi.storage.k8s.io/fstype: xfs
+  additionalMkfsParams: "-i nrext64=1 -m rmapbt=0"
+```
+
+This parameter is only supported for persistent volumes. Inline ephemeral volumes
+cannot set it because formatting options can write to host devices outside the allocated volume.
+
+If you use `additionalMkfsParams` to set filesystem stripe geometry manually
+(for example, ext4's `stride` and `stripe_width`), match it to the underlying
+volume. The driver uses one stripe per physical volume, so a fixed stripe width
+only matches nodes with the same physical volume count.
+
 ## Encryption ##
 
 csi-driver-lvm supports LUKS2 encryption for volumes at rest. When encryption is enabled, the LVM logical volume is formatted with LUKS2 and a dm-crypt mapper device is used transparently for all I/O.
