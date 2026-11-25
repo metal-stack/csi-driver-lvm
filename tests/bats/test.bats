@@ -520,9 +520,68 @@
     [ "$status" -eq 0 ]
 }
 
+@test "kubelet restart does not stack a second mount on encrypted linear volume" {
+    PV_NAME=$(kubectl get pvc lvm-pvc-encrypted-linear -o jsonpath='{.spec.volumeName}')
+    POD_UID=$(kubectl get pod volume-test-encrypted -o jsonpath='{.metadata.uid}')
+    NODE=$(kubectl get pod volume-test-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+    TARGET="/var/lib/kubelet/pods/$POD_UID/volumes/kubernetes.io~csi/$PV_NAME/mount"
+
+    run kubectl debug "node/$NODE" -n csi-driver-lvm --profile=sysadmin --image=csi-driver-lvm:latest --image-pull-policy=IfNotPresent -- nsenter -t 1 -m -- systemctl restart kubelet
+    [ "$status" -eq 0 ]
+
+    # the restarted kubelet publishes every volume it finds mounted again
+    republished=false
+    end=$((SECONDS+120))
+    while [ $SECONDS -lt $end ]; do
+        if kubectl logs -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm | grep "volume already published" | grep -q "$PV_NAME"; then
+            republished=true
+            break
+        fi
+        sleep 2
+    done
+    kubectl delete pods -n csi-driver-lvm --field-selector=status.phase==Succeeded
+    [ "$republished" = true ]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- grep -c " $TARGET " /proc/self/mountinfo
+    [ "$output" = "1" ]
+}
+
+@test "stack a second mount on encrypted linear volume" {
+    PV_NAME=$(kubectl get pvc lvm-pvc-encrypted-linear -o jsonpath='{.spec.volumeName}')
+    POD_UID=$(kubectl get pod volume-test-encrypted -o jsonpath='{.metadata.uid}')
+    NODE=$(kubectl get pod volume-test-encrypted -o jsonpath='{.spec.nodeName}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+    TARGET="/var/lib/kubelet/pods/$POD_UID/volumes/kubernetes.io~csi/$PV_NAME/mount"
+
+    # what earlier releases left behind on every republish
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- mount --bind "$TARGET" "$TARGET"
+    [ "$status" -eq 0 ]
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- grep -c " $TARGET " /proc/self/mountinfo
+    [ "$output" = "2" ]
+}
+
 @test "delete encrypted linear pod" {
     run kubectl delete -f files/pod.encrypted-linear.vol.yaml --grace-period=0 --wait --timeout=30s
     [ "$status" -eq 0 ]
+}
+
+@test "encrypted linear LUKS device is closed" {
+    PV_NAME=$(kubectl get pvc lvm-pvc-encrypted-linear -o jsonpath='{.spec.volumeName}')
+    NODE=$(kubectl get pv "$PV_NAME" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}')
+    PLUGIN_POD=$(kubectl get pods -n csi-driver-lvm -l app=csi-driver-lvm --field-selector "spec.nodeName=$NODE" -o jsonpath='{.items[0].metadata.name}')
+
+    end=$((SECONDS+60))
+    while [ $SECONDS -lt $end ]; do
+        if ! kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- cryptsetup status "csi-lvm-$PV_NAME" > /dev/null; then
+            break
+        fi
+        sleep 2
+    done
+
+    run kubectl exec -n csi-driver-lvm "$PLUGIN_POD" -c csi-driver-lvm -- cryptsetup status "csi-lvm-$PV_NAME"
+    [ "$status" -ne 0 ]
 }
 
 @test "delete resized encrypted linear pvc" {

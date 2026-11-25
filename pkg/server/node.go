@@ -56,6 +56,16 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		return nil, status.Error(codes.InvalidArgument, "cannot have both block and mount access type")
 	}
 
+	// kubelet publishes again, for example after it restarts, and a second mount would stack on the first
+	mounted, err := lvm.IsMounted(targetPath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "unable to check if %s is mounted: %v", targetPath, err)
+	}
+	if mounted {
+		d.log.Info("volume already published", "id", req.GetVolumeId(), "targetPath", targetPath)
+		return &csi.NodePublishVolumeResponse{}, nil
+	}
+
 	ephemeralVolume := req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "true" ||
 		req.GetVolumeContext()["csi.storage.k8s.io/ephemeral"] == "" && d.ephemeral // Kubernetes 1.15 doesn't have csi.storage.k8s.io/ephemeral.
 
@@ -156,7 +166,9 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 		return nil, status.Error(codes.InvalidArgument, "target path missing in request")
 	}
 
-	lvm.UmountLV(d.log, req.GetTargetPath())
+	if err := lvm.UmountLV(d.log, req.GetTargetPath()); err != nil {
+		return nil, status.Errorf(codes.Internal, "unable to unpublish volume: %v", err)
+	}
 
 	// ephemeral volumes start with "csi-"
 	if strings.HasPrefix(volID, "csi-") {
