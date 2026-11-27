@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/mattn/go-shellwords"
 )
 
 const (
@@ -32,7 +34,7 @@ type lsblk struct {
 	} `json:"blockdevices"`
 }
 
-func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mountOptions []string) (string, error) {
+func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mountOptions []string, additionalMkfsParams string) (string, error) {
 	lvPath := devicePath
 
 	formatted := false
@@ -71,10 +73,20 @@ func MountLV(log *slog.Logger, lvname, mountPath, fsType, devicePath string, mou
 	}
 
 	if !formatted {
+		// Parse quoting without executing a shell or expanding variables.
+		parser := shellwords.Parser{ParseEnv: false, ParseBacktick: false}
+		mkfsArgs, err := parser.Parse(additionalMkfsParams)
+		if err != nil {
+			return "", fmt.Errorf("unable to parse additionalMkfsParams: %w", err)
+		}
+		if parser.Position != -1 {
+			return "", fmt.Errorf("unable to parse additionalMkfsParams: unquoted shell operators are not supported")
+		}
 		formatArgs := []string{}
 		if forceFormat {
 			formatArgs = append(formatArgs, "-f")
 		}
+		formatArgs = append(formatArgs, mkfsArgs...)
 		formatArgs = append(formatArgs, lvPath)
 
 		log.Debug("formatting with mkfs", "fs-type", fsType, "args", strings.Join(formatArgs, " "))
@@ -250,9 +262,8 @@ func CreateVG(log *slog.Logger, name string, devicesPattern string) (string, err
 	return string(out), err
 }
 
-// CreateLV creates the new volume
-// used by lvcreate provisioner pod and by nodeserver for ephemeral volumes
-func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType string, integrity bool) (string, error) {
+// CreateLV creates a logical volume. stripeSize is an optional, validated LVM size string.
+func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType string, integrity bool, stripeSize string) (string, error) {
 	if LvExists(log, vg, name) {
 		log.Debug("logicalvolume already exists", "name", name)
 		return name, nil
@@ -263,13 +274,11 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 	}
 
 	switch lvmType {
-	case "linear", "mirror", "striped":
+	case linearType, mirrorType, stripedType:
 		// These are supported lvm types
 	default:
 		return "", fmt.Errorf("lvmType is incorrect: %s", lvmType)
 	}
-
-	args := []string{"-v", "--yes", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
 
 	pvs, err := pvCount(vg)
 	if err != nil {
@@ -278,17 +287,36 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 
 	if pvs < 2 {
 		log.Warn("pvcount is <2 only linear is supported")
+	}
+
+	args, err := buildLvcreateArgs(vg, name, size, lvmType, pvs, integrity, stripeSize)
+	if err != nil {
+		return "", err
+	}
+	log.Debug("lvcreate", "args", args)
+	cmd := exec.Command("lvcreate", args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func buildLvcreateArgs(vg, name string, size uint64, lvmType string, pvs int, integrity bool, stripeSize string) ([]string, error) {
+	args := []string{"-v", "--yes", "-n", name, "-W", "y", "-L", fmt.Sprintf("%db", size)}
+
+	if pvs < 2 {
 		lvmType = linearType
 	}
 
 	switch lvmType {
 	case stripedType:
 		args = append(args, "--type", "striped", "--stripes", fmt.Sprintf("%d", pvs))
+		if stripeSize != "" {
+			args = append(args, "--stripesize", stripeSize)
+		}
 	case mirrorType:
 		args = append(args, "--type", "raid1", "--mirrors", "1", "--nosync")
 	case linearType:
 	default:
-		return "", fmt.Errorf("unsupported lvmtype: %s", lvmType)
+		return nil, fmt.Errorf("unsupported lvmtype: %s", lvmType)
 	}
 
 	if integrity {
@@ -296,7 +324,7 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 		case mirrorType:
 			args = append(args, "--raidintegrity", "y")
 		default:
-			return "", fmt.Errorf("integrity is only supported if type is mirror")
+			return nil, fmt.Errorf("integrity is only supported if type is mirror")
 		}
 	}
 
@@ -304,11 +332,7 @@ func CreateLV(log *slog.Logger, vg string, name string, size uint64, lvmType str
 	for _, tag := range tags {
 		args = append(args, "--addtag", tag)
 	}
-	args = append(args, vg)
-	log.Debug("lvcreate", "args", args)
-	cmd := exec.Command("lvcreate", args...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	return append(args, vg), nil
 }
 
 func LvExists(log *slog.Logger, vg string, name string) bool {

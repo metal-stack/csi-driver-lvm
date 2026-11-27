@@ -67,6 +67,9 @@ jobs:
       with:
         go-version-file: 'go.mod'
 
+    - name: Unit tests
+      run: go test ./...
+
     - name: Create k8s Kind Cluster
       uses: helm/kind-action@v1
       with:

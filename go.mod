@@ -6,6 +6,7 @@ require (
 	github.com/container-storage-interface/spec v1.12.0
 	github.com/docker/go-units v0.5.0
 	github.com/go-logr/logr v1.4.3
+	github.com/mattn/go-shellwords v1.0.14
 	github.com/metal-stack/v v1.0.3
 	golang.org/x/sys v0.41.0
 	google.golang.org/grpc v1.79.3

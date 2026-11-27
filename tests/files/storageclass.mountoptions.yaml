@@ -3,7 +3,10 @@ kind: StorageClass
 metadata:
   name: csi-driver-lvm-mountoptions
 parameters:
-  type: linear
+  type: striped
+  stripeSize: "0.25M"
+  csi.storage.k8s.io/fstype: xfs
+  additionalMkfsParams: '-i nrext64=1 -m rmapbt=0 -L "test stripe"'
 provisioner: lvm.csi.metal-stack.io
 allowVolumeExpansion: true
 reclaimPolicy: Delete
