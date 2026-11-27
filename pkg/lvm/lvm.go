@@ -2,7 +2,9 @@ package lvm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -11,12 +13,16 @@ import (
 	"strings"
 
 	"github.com/mattn/go-shellwords"
+	mountutils "k8s.io/mount-utils"
 )
 
 const (
 	linearType  = "linear"
 	stripedType = "striped"
 	mirrorType  = "mirror"
+
+	// mounts stacked on one target by earlier, non-idempotent publishes are removed one per umount
+	maxUnmounts = 10
 )
 
 type vgReport struct {
@@ -152,13 +158,33 @@ func BindMountLV(log *slog.Logger, lvname, mountPath string, devicePath string) 
 	return "", nil
 }
 
-func UmountLV(log *slog.Logger, targetPath string) {
-	cmd := exec.Command("umount", "--lazy", "--force", targetPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		//RETURN err ?
-		log.Error("unable to umount", "targetPath", targetPath, "output", string(out), "error", err)
+// IsMounted reports whether path is a mount point. A path that doesn't exist isn't one.
+func IsMounted(path string) (bool, error) {
+	mounted, err := mountutils.New("").IsMountPoint(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
 	}
+	return mounted, err
+}
+
+// UmountLV unmounts targetPath until it is no longer a mount point.
+func UmountLV(log *slog.Logger, targetPath string) error {
+	for range maxUnmounts {
+		mounted, err := IsMounted(targetPath)
+		if err != nil {
+			return fmt.Errorf("unable to check if %s is mounted: %w", targetPath, err)
+		}
+		if !mounted {
+			return nil
+		}
+		cmd := exec.Command("umount", "--lazy", "--force", targetPath)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("unable to umount %s: %w (%s)", targetPath, err, string(out))
+		}
+		log.Debug("umounted", "targetPath", targetPath)
+	}
+	return fmt.Errorf("%s is still mounted after %d umounts", targetPath, maxUnmounts)
 }
 
 // VgExists checks if the given volume group exists
